@@ -1,11 +1,20 @@
-.PHONY: install dev api worker migrate migrate-new test lint format
+.PHONY: install dev dev-local up down api worker migrate migrate-new test lint format
 
 install:
 	pnpm install
 	uv sync --all-packages
 	uv run pre-commit install
 
-dev:
+# Full stack in Docker: api, worker, worker-queue, all 3 frontend apps, postgres, redis, minio.
+dev up:
+	docker compose up --build
+
+down:
+	docker compose down
+
+# Local (non-Docker) dev loop: only infra in Docker, apps run on the host via uv/pnpm.
+# Faster iteration than rebuilding containers, at the cost of needing host toolchains installed.
+dev-local:
 	docker compose up -d postgres redis minio
 	pnpm turbo dev
 
