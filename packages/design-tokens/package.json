@@ -1,0 +1,11 @@
+{
+  "name": "@medical-platform/design-tokens",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    "./colors.css": "./colors.css",
+    "./typography.css": "./typography.css",
+    "./spacing.css": "./spacing.css"
+  }
+}

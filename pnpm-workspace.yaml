@@ -1,0 +1,5 @@
+packages:
+  - apps/staff-web
+  - apps/patient-web
+  - apps/landing
+  - packages/*

@@ -1,0 +1,31 @@
+import { useNavigate, useParams } from 'react-router-dom';
+import { DynamicForm } from '../../features/dynamic-form/dynamic-form';
+import { useConsentFlow } from '../../features/submission/use-consent-flow';
+import { StatusScreen } from '../consent-start';
+
+export function MedicalQuestionnairePage() {
+  const { token } = useParams<{ token: string }>();
+  const navigate = useNavigate();
+  const { form, answers, setAnswer } = useConsentFlow();
+
+  if (!form) {
+    return <StatusScreen message="Carga el enlace de consentimiento desde el inicio." />;
+  }
+
+  const requiredMissing = form.questions.some((q) => q.is_required && answers[q.field_key] == null);
+
+  return (
+    <div className="flex flex-col gap-6">
+      <h1 className="text-xl font-bold text-slate-900">Filtro médico</h1>
+      <DynamicForm questions={form.questions} answers={answers} onChange={setAnswer} />
+      <button
+        type="button"
+        disabled={requiredMissing}
+        onClick={() => navigate(`/c/${token}/treatment-information`)}
+        className="rounded-lg bg-slate-900 py-4 text-base font-semibold text-white disabled:opacity-40"
+      >
+        Continuar
+      </button>
+    </div>
+  );
+}

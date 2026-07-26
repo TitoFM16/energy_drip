@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv*/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# uv
+uv.lock.bak
+
+# Node / JS
+node_modules/
+.pnpm-store/
+.turbo/
+dist/
+build/
+.next/
+.vite/
+*.tsbuildinfo
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Local data volumes
+services/postgres/data/
+services/storage/data/
+
+# Generated
+apps/api/src/medical_api/**/__pycache__/
+coverage/
