@@ -1,5 +1,3 @@
-import hashlib
-import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -23,17 +21,9 @@ from medical_api.modules.consents.schemas import (
 )
 from medical_api.modules.notifications.service import enqueue_event
 from medical_api.shared.domain.eligibility import evaluate_rules
+from medical_api.shared.utilities.tokens import generate_opaque_token, hash_token
 
 CONSENT_LINK_TTL = timedelta(hours=48)
-
-
-def hash_token(raw_token: str) -> str:
-    return hashlib.sha256(raw_token.encode()).hexdigest()
-
-
-def generate_consent_token() -> tuple[str, str]:
-    raw_token = secrets.token_urlsafe(32)
-    return raw_token, hash_token(raw_token)
 
 
 class ConsentService:
@@ -48,7 +38,7 @@ class ConsentService:
         appointment_id: uuid.UUID | None,
         template_version_id: uuid.UUID,
     ) -> tuple[ConsentRequest, str]:
-        raw_token, token_hash = generate_consent_token()
+        raw_token, token_hash = generate_opaque_token()
         request = ConsentRequest(
             organization_id=organization_id,
             patient_id=patient_id,

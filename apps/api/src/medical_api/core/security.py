@@ -2,24 +2,27 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
+import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from medical_api.core.config import get_settings
 
 settings = get_settings()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
+
+# bcrypt's own C extension rejects secrets over 72 bytes outright (no silent
+# truncation) — schemas enforce this as a request-validation error via
+# Field(max_length=72) so it never reaches here as a raw crash.
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    return bcrypt.checkpw(plain_password.encode(), hashed_password.encode())
 
 
 def create_access_token(subject: str, extra_claims: dict[str, Any] | None = None) -> str:

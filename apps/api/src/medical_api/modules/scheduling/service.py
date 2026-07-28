@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,9 +9,16 @@ from medical_api.modules.scheduling.models import (
     Appointment,
     AppointmentStatus,
     AppointmentStatusHistory,
+    AvailabilityRule,
 )
-from medical_api.modules.scheduling.repository import AppointmentRepository
-from medical_api.modules.scheduling.schemas import AppointmentCreate
+from medical_api.modules.scheduling.repository import AppointmentRepository, AvailabilityRepository
+from medical_api.modules.scheduling.schemas import (
+    AppointmentCreate,
+    AvailabilityRuleCreate,
+    AvailableSlot,
+)
+
+MAX_AVAILABILITY_WINDOW_DAYS = 31
 
 
 class AppointmentService:
@@ -71,3 +79,88 @@ class AppointmentService:
                 payload={"appointment_id": str(appointment.id)},
             )
         return appointment
+
+
+class AvailabilityService:
+    """Computes bookable slots from a practitioner's recurring weekly rules
+    minus their existing appointments.
+
+    MVP simplification: rule `start_time`/`end_time` are interpreted as UTC
+    directly rather than converted from a location's local timezone — fine
+    for a single-timezone clinic, but multi-location deployments spanning
+    timezones will need that conversion added here.
+    """
+
+    def __init__(self, repository: AvailabilityRepository, appointments: AppointmentRepository):
+        self.repository = repository
+        self.appointments = appointments
+
+    async def create_rule(
+        self, organization_id: uuid.UUID, data: AvailabilityRuleCreate
+    ) -> AvailabilityRule:
+        rule = AvailabilityRule(organization_id=organization_id, **data.model_dump())
+        return await self.repository.create_rule(rule)
+
+    async def list_rules(
+        self, organization_id: uuid.UUID, practitioner_id: uuid.UUID
+    ) -> list[AvailabilityRule]:
+        return await self.repository.list_rules(organization_id, practitioner_id)
+
+    async def delete_rule(self, organization_id: uuid.UUID, rule_id: uuid.UUID) -> None:
+        rule = await self.repository.get_rule(organization_id, rule_id)
+        if rule is None:
+            raise NotFoundError("AvailabilityRule", rule_id)
+        await self.repository.delete_rule(rule)
+
+    async def compute_slots(
+        self,
+        organization_id: uuid.UUID,
+        practitioner_id: uuid.UUID,
+        date_from: date,
+        date_to: date,
+        duration_minutes: int,
+    ) -> list[AvailableSlot]:
+        if date_to < date_from:
+            raise ConflictError("date_to must not be before date_from")
+        if (date_to - date_from).days > MAX_AVAILABILITY_WINDOW_DAYS:
+            raise ConflictError(f"Date range cannot exceed {MAX_AVAILABILITY_WINDOW_DAYS} days")
+
+        rules = await self.repository.list_rules(organization_id, practitioner_id)
+        rules_by_weekday: dict[int, list[AvailabilityRule]] = {}
+        for rule in rules:
+            rules_by_weekday.setdefault(rule.weekday, []).append(rule)
+        if not rules_by_weekday:
+            return []
+
+        range_start = datetime.combine(date_from, datetime.min.time(), tzinfo=UTC)
+        range_end = datetime.combine(date_to, datetime.min.time(), tzinfo=UTC) + timedelta(days=1)
+        busy_periods = [
+            (appointment.starts_at, appointment.ends_at)
+            for appointment in await self.appointments.list_for_practitioner_range(
+                practitioner_id, range_start, range_end
+            )
+        ]
+
+        now = datetime.now(UTC)
+        step = timedelta(minutes=duration_minutes)
+        slots: list[AvailableSlot] = []
+        current_day = date_from
+        while current_day <= date_to:
+            for rule in rules_by_weekday.get(current_day.weekday(), []):
+                cursor = datetime.combine(current_day, rule.start_time, tzinfo=UTC)
+                day_end = datetime.combine(current_day, rule.end_time, tzinfo=UTC)
+                while cursor + step <= day_end:
+                    slot_end = cursor + step
+                    if cursor >= now and not _overlaps_any(cursor, slot_end, busy_periods):
+                        slots.append(AvailableSlot(starts_at=cursor, ends_at=slot_end))
+                    cursor += step
+            current_day += timedelta(days=1)
+        return slots
+
+
+def _overlaps_any(
+    starts_at: datetime, ends_at: datetime, busy_periods: list[tuple[datetime, datetime]]
+) -> bool:
+    return any(
+        starts_at < busy_end and ends_at > busy_start for busy_start, busy_end in busy_periods
+    )

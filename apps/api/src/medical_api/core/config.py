@@ -20,6 +20,9 @@ class Settings(BaseSettings):
 
     secret_key: str = "change-me-in-production"
     access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 30
+    invite_expire_days: int = 7
+    password_reset_expire_hours: int = 2
     algorithm: str = "HS256"
 
     whatsapp_api_token: str = ""

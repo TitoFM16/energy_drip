@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, time
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from medical_api.modules.scheduling.models import AppointmentStatus
 
@@ -39,3 +39,31 @@ class AppointmentRead(BaseModel):
     notes: str | None
 
     model_config = {"from_attributes": True}
+
+
+class AvailabilityRuleCreate(BaseModel):
+    practitioner_id: uuid.UUID
+    weekday: int = Field(ge=0, le=6, description="0 = Monday ... 6 = Sunday")
+    start_time: time
+    end_time: time
+
+    @model_validator(mode="after")
+    def check_time_range(self) -> "AvailabilityRuleCreate":
+        if self.end_time <= self.start_time:
+            raise ValueError("end_time must be after start_time")
+        return self
+
+
+class AvailabilityRuleRead(BaseModel):
+    id: uuid.UUID
+    practitioner_id: uuid.UUID
+    weekday: int
+    start_time: time
+    end_time: time
+
+    model_config = {"from_attributes": True}
+
+
+class AvailableSlot(BaseModel):
+    starts_at: datetime
+    ends_at: datetime
