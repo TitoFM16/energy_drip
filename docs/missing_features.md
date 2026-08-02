@@ -121,6 +121,8 @@ therefore no longer tracked as wholly missing:
   startup.
 - `uv run pytest` now works from the repository root — see "Repair the root
   Python test command" above.
+- `pnpm test` and `make test` both pass now — see "Add frontend tests and
+  repair `make test`" above.
 
 ## Priority levels
 
@@ -778,20 +780,41 @@ passes all 17 tests (16 API + 1 worker); each app's tests still pass
 independently from within its own directory; CI already ran `uv run pytest`
 at the root (this fixes that job, no CI file changes needed).
 
-### P0: Add frontend tests and repair `make test`
+### P0: Add frontend tests and repair `make test` — pnpm test/make test pass now
 
-All frontend projects currently return an error because Vitest finds no test
-files.
+`pnpm test` and `make test` both pass (verified with explicit exit-code
+checks, not just eyeballing output). staff-web has real tests for
+`apiFetch` (`shared/utilities/api.test.ts`): auth-header attachment,
+exactly-one silent-refresh-then-retry on `401`, session clear +
+redirect-to-`/login` when refresh also fails, and 204/error-response
+handling — directly the "staff authentication and API error handling"
+criterion, using `vi.stubGlobal` for `fetch`/`window` rather than adding a
+DOM testing stack for one file. patient-web got two small extractions
+specifically to make them unit-testable without jsdom:
+`hasIncompleteRequiredAnswers` (`features/dynamic-form/validation.ts`,
+pulled out of `MedicalQuestionnairePage`'s inline required-field check) and
+`buildSubmissionPayload` (`features/submission/use-submit-consent.ts`,
+pulled out of `useSubmitConsent`'s `mutationFn` body) — both are now used
+by the real components/hooks, not just duplicated for testing. landing has
+no test files; `vite.config.ts` sets `test.passWithNoTests: true` with a
+comment explaining why (it's static content plus a placeholder `/reservar`
+page — the real public booking flow isn't built yet, see "Connected public
+booking experience"), the acceptance criteria's own sanctioned fallback
+rather than writing hollow tests against placeholder JSX.
 
-Acceptance criteria:
+Remaining acceptance criteria:
 
-- Add unit/component tests for each frontend application, or explicitly
-  configure projects without tests to pass until tests are added.
-- Test staff authentication and API error handling.
-- Test dynamic consent fields, required values, signature behavior, submission,
-  and expired tokens.
-- Test important landing-page and booking interactions.
-- Make `pnpm test` and `make test` pass.
+- Test signature behavior and expired-token handling in patient-web
+  (`ConsentStartPage`'s error branch, the signature-pad component) — these
+  are component/interaction behaviors that need `jsdom` +
+  `@testing-library/react`, which nothing in the frontend workspace has
+  today. The tests added this round were deliberately scoped to pure logic
+  to avoid that investment; it's still worth doing.
+- Test important landing-page and booking interactions — blocked on the
+  booking flow itself existing (see "Connected public booking experience").
+- Broader component/interaction coverage for staff-web (e.g. the Agenda
+  booking flow, the consent-template question builder) once a DOM testing
+  stack is in place.
 
 ### P1: Backend integration tests
 
@@ -958,9 +981,11 @@ Acceptance criteria:
 
 ## Recommended delivery order
 
-1. ~~Repair root tests~~ `uv run pytest` passes from the repo root now.
-   Frontend tests (`pnpm test`/`make test`) are still broken — see "Add
-   frontend tests and repair `make test`".
+1. ~~Repair root tests~~ Both `uv run pytest` and `pnpm test`/`make test`
+   pass now (see "Repair the root Python test command" and "Add frontend
+   tests and repair `make test`"). Still open: real component-level
+   coverage (signature behavior, expired tokens, booking) once a DOM
+   testing stack exists.
 2. ~~Lock the product down to a single, operator-bootstrapped clinic~~ Done —
    see "Product scope correction". Still open from this item: seed the
    standard role catalogue and add development reference data.

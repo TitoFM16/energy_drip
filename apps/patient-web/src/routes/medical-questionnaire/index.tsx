@@ -1,5 +1,6 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { DynamicForm } from '../../features/dynamic-form/dynamic-form';
+import { hasIncompleteRequiredAnswers } from '../../features/dynamic-form/validation';
 import { useConsentFlow } from '../../features/submission/use-consent-flow';
 import { StatusScreen } from '../consent-start';
 
@@ -12,7 +13,7 @@ export function MedicalQuestionnairePage() {
     return <StatusScreen message="Carga el enlace de consentimiento desde el inicio." />;
   }
 
-  const requiredMissing = form.questions.some((q) => q.is_required && answers[q.field_key] == null);
+  const requiredMissing = hasIncompleteRequiredAnswers(form.questions, answers);
 
   return (
     <div className="flex flex-col gap-6">
