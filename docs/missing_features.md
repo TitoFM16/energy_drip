@@ -139,6 +139,9 @@ therefore no longer tracked as wholly missing:
   pooled DB engine meant to be sized for one long-lived event loop caused
   intermittent asyncpg "different loop" crashes — worker actors now use a
   separate NullPool-backed engine (`apps/worker/src/medical_worker/database.py`).
+- Added [`docs/whatsapp-setup.md`](whatsapp-setup.md): a step-by-step
+  operator runbook for the Meta account/template/webhook setup that only
+  the clinic owner can do — see "Notification automation" above.
 
 ## Priority levels
 
@@ -629,7 +632,11 @@ Remaining acceptance criteria:
   approved through Meta — this is an operator task (Meta Business Manager
   account, phone number verification, template submission/review) that
   can't be done from this codebase; nothing here is blocked on it, but no
-  message can actually be _sent_ until it happens.
+  message can actually be _sent_ until it happens. Full step-by-step
+  runbook: [`docs/whatsapp-setup.md`](whatsapp-setup.md) — credentials →
+  env var mapping, the exact four templates this codebase sends (names,
+  param order, language), webhook registration, and an end-to-end
+  verification checklist.
 - Validate template names, locales, and parameter ordering before sending
   (today the client trusts whatever `template_name`/`params` a caller
   passes — no check that the param count matches what the approved
