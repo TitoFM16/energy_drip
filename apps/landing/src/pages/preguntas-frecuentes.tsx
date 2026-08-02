@@ -15,10 +15,10 @@ export function PreguntasFrecuentesPage() {
   return (
     <SimplePage title="Preguntas frecuentes">
       {FAQS.map((faq) => (
-        <div key={faq.question}>
-          <h3 className="font-semibold text-slate-900">{faq.question}</h3>
+        <article key={faq.question}>
+          <h3>{faq.question}</h3>
           <p>{faq.answer}</p>
-        </div>
+        </article>
       ))}
     </SimplePage>
   );

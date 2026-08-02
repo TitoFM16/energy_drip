@@ -1,12 +1,20 @@
+import { Link } from 'react-router-dom';
 import { SimplePage } from '../components/page-layout';
 
 export function ReservarPage() {
   return (
-    <SimplePage title="Reservar cita">
+    <SimplePage title="Reserva tu valoración">
       <p>
-        El flujo de reserva pública se conecta al mismo backend que usa el equipo de la clínica
-        (`POST /api/v1/appointments`). Aquí vive el formulario de reserva para pacientes nuevos.
+        Estamos preparando la reserva en línea. Mientras activamos el formulario, puedes conocer
+        nuestros tratamientos o escribirnos a través de nuestros canales de atención.
       </p>
+      <div className="simple-page__note">
+        Nunca envíes antecedentes médicos, documentos de identidad ni otra información sensible por
+        redes sociales. El equipo te compartirá un enlace privado cuando corresponda.
+      </div>
+      <Link to="/contacto" className="button button--primary">
+        Ver canales de contacto
+      </Link>
     </SimplePage>
   );
 }
