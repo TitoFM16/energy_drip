@@ -9,6 +9,7 @@ from medical_api.api.v1 import (
     practitioners,
     public,
     treatments,
+    webhooks,
 )
 from medical_api.modules.audit.router import router as audit_router
 
@@ -24,3 +25,4 @@ api_router.include_router(consents.router, prefix="/consents", tags=["consents"]
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(audit_router, prefix="/audit", tags=["audit"])
 api_router.include_router(public.router, prefix="/public", tags=["public"])
+api_router.include_router(webhooks.router, prefix="/webhooks/whatsapp", tags=["webhooks"])

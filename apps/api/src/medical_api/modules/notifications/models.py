@@ -59,3 +59,6 @@ class NotificationMessage(Base, UUIDPrimaryKeyMixin, TimestampMixin, Organizatio
     )
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Normalized human-readable reason, set when a delivery-status webhook
+    # callback (or the initial send attempt) reports status=failed.
+    failure_reason: Mapped[str | None]

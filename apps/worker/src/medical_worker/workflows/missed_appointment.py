@@ -10,13 +10,13 @@ import dramatiq
 import structlog
 from sqlalchemy import select
 
-from medical_api.core.database import async_session_factory
 from medical_api.modules.scheduling.models import (
     Appointment,
     AppointmentStatus,
     AppointmentStatusHistory,
 )
 from medical_worker import broker  # noqa: F401  (registers the Redis broker)
+from medical_worker.database import async_session_factory
 
 logger = structlog.get_logger(__name__)
 

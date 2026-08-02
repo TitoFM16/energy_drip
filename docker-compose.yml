@@ -58,6 +58,8 @@ services:
       S3_SECRET_KEY: medical123
       S3_BUCKET: medical-platform
       CORS_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175"]'
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-}
     volumes:
       - ./apps/api:/workspace/apps/api
     depends_on:
@@ -102,6 +104,7 @@ services:
       S3_BUCKET: medical-platform
       WHATSAPP_API_TOKEN: ${WHATSAPP_API_TOKEN:-}
       WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      PATIENT_WEB_BASE_URL: http://localhost:5174
     volumes:
       - ./apps/api:/workspace/apps/api
       - ./apps/worker:/workspace/apps/worker

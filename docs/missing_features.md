@@ -131,6 +131,14 @@ therefore no longer tracked as wholly missing:
   WhatsApp client fails fast (no HTTP call at all) when credentials aren't
   configured instead of burning through 5 retries against Meta's API with
   an empty token — see "Notification automation" above.
+- The WhatsApp delivery-status webhook is built and verified live end to
+  end (signature verification, challenge-response handshake, idempotent
+  out-of-order-safe status updates) — see "Delivery callbacks and
+  message-state reconciliation" above. Also fixed a latent bug in every
+  worker actor (not just this one): dramatiq's thread pool plus a shared
+  pooled DB engine meant to be sized for one long-lived event loop caused
+  intermittent asyncpg "different loop" crashes — worker actors now use a
+  separate NullPool-backed engine (`apps/worker/src/medical_worker/database.py`).
 
 ## Priority levels
 
@@ -630,29 +638,84 @@ Remaining acceptance criteria:
 - Store tokens securely and support rotation (still a plain env var, same
   as every other secret in this codebase — no rotation mechanism).
 
-### P1: Delivery callbacks and message-state reconciliation
+### P1: Delivery callbacks and message-state reconciliation — done
 
-No webhook endpoint exists yet to receive Meta's delivery-status callbacks
-— `update_delivery_status` (`apps/worker/src/medical_worker/activities/`)
-is a dramatiq actor that applies a status update to a `NotificationMessage`
-row, but nothing calls it; there's no `POST /webhooks/whatsapp` route
-anywhere in `apps/api`. This is fully buildable without live Meta
-credentials (Meta's webhook signature scheme — HMAC-SHA256 over the raw
-body using the app secret — and its challenge-response verification for
-registering the webhook URL are both public/documented) and is the natural
-next step once the above is picked back up.
+`GET/POST /api/v1/webhooks/whatsapp`
+(`apps/api/src/medical_api/modules/notifications/webhook_router.py`) now
+exists. `GET` handles Meta's challenge-response handshake (validates
+`hub.verify_token` against `WHATSAPP_WEBHOOK_VERIFY_TOKEN`, echoes back
+`hub.challenge`). `POST` verifies `X-Hub-Signature-256` over the raw body
+using `WHATSAPP_APP_SECRET` (HMAC-SHA256,
+`integrations/whatsapp/webhook.py::verify_signature`) before touching the
+payload — an unsigned or wrongly-signed request never reaches parsing.
+That pure signature/parsing logic — the actual security
+boundary — has 14 unit tests
+(`apps/api/tests/test_whatsapp_webhook.py`) covering correct/tampered/
+wrong-secret/missing-header/missing-prefix/unconfigured-secret signatures
+and multi-entry/multi-status/malformed-entry payload parsing.
 
-Acceptance criteria:
+Rather than processing inline, the webhook enqueues one outbox event per
+status update (event type `whatsapp.delivery_status`), matching this app's
+existing rule that the API layer only ever enqueues work. The worker's
+`update_delivery_status` actor (now `payload: dict`-shaped, matching every
+other outbox handler) applies it with basic out-of-order protection: a
+`sent` arriving after `delivered` is ignored rather than regressing the
+status, and a `failed` is ignored if the message is already `delivered`.
+Failure reasons from Meta's `errors[]` are stored in a new
+`NotificationMessage.failure_reason` column (migration `8d569bbaea97`).
 
-- An authenticated webhook endpoint for WhatsApp status callbacks, including
-  the `GET` challenge-response handshake Meta requires when registering a
-  webhook URL.
-- Verify Meta's webhook signature (`X-Hub-Signature-256`) rather than
-  trusting the payload outright.
-- Process duplicate and out-of-order callbacks idempotently.
-- Track queued, accepted, sent, delivered, failed, and undeliverable states.
-- Preserve provider message IDs and normalized failure reasons.
-- Audit meaningful delivery events without logging medical content.
+Two upstream gaps were fixed to make this actually work rather than just
+exist: `send_whatsapp_message` never threaded a `NotificationMessage.id`
+through to the send attempt, so `provider_message_id` was never written
+back onto a row — nothing a webhook callback could ever match against. All
+three call sites (`appointment_confirmation`, `appointment_reminders`,
+`consent_request`) now pass their message's id, and the actor updates
+`status`/`provider_message_id`/`sent_at` on success or `status`/
+`failure_reason` on a permanent failure. Separately, `consent_request.py`
+had a hardcoded fake link domain (`consent.example.com`) and never created
+a `NotificationMessage` row at all for the consent-link send; both fixed
+(new `patient_web_base_url` setting, default `http://localhost:5174`,
+matching the real link staff-web already shows in dev mode).
+
+Verified live end to end against the real Docker stack, not just unit
+tests: `GET` handshake accepts the correct token and rejects a wrong one;
+`POST` rejects an unsigned payload (403) and accepts a correctly-signed one
+(200); a signed `sent` callback for an unknown `provider_message_id` is
+logged and dropped without erroring; after manually creating a
+`NotificationMessage` row with a known `provider_message_id`, a `delivered`
+callback correctly updates its status and `delivered_at`; a subsequent
+stale `sent` callback for the same message is correctly ignored
+(`notification.status_update.ignored_out_of_order`) rather than regressing
+the status.
+
+**Bug found and fixed while doing that live verification, unrelated to this
+feature's own code but blocking it**: every worker actor
+(`generate_pdf`, `send_whatsapp`, `update_delivery_status`, and all four
+workflow actors) shares one module-level `engine`/`async_session_factory`
+from `medical_api.core.database`, sized for a single long-lived event loop
+(the API's uvicorn process). dramatiq runs actors across a thread pool,
+and each actor wraps its work in its own `asyncio.run(...)` — a fresh
+event loop per call, per thread. Two sequential webhook-triggered actor
+calls were enough to hit asyncpg's "got Future attached to a different
+loop" (the same root cause fixed earlier this session in
+`test_auth_flows.py`, but here in the actual worker process, not a test).
+Fixed with a separate NullPool-backed engine for worker actors
+(`apps/worker/src/medical_worker/database.py`) — never reuses a
+connection across checkouts, so there's nothing to hand across loops.
+`consumers/outbox.py` didn't need this (one continuous loop for the
+process's whole life) and still uses the pooled engine. This was a latent
+bug in every actor, discovered only now because nothing before this
+session had actually driven two live dramatiq actor calls through the
+real worker process in the same debugging session — worth being aware of
+if delivery seems to intermittently fail in ways that don't reproduce via
+direct script invocation.
+
+Remaining acceptance criteria:
+
+- "Undeliverable" isn't a status this tracks separately from `failed`
+  (Meta's webhook doesn't distinguish them either, in practice).
+- Audit meaningful delivery events without logging medical content — no
+  audit-log integration yet (see "Audit coverage and integrity").
 
 ### P1: Automated reminder scheduling
 
@@ -1140,13 +1203,14 @@ Acceptance criteria:
    decisions/rationale, filtering, and the signed-document viewer (see
    "Consent review workspace").
 9. Configure private, versioned object storage and document verification.
-10. ~~Connect real WhatsApp and SMS providers~~ SMS is out of scope by
-    product decision (WhatsApp only). WhatsApp's client now fails safely and
-    distinguishes retryable from permanent errors — still open: the actual
-    Meta Business account/template approval (an operator task), template
-    param validation, delivery-callback webhook, and reminder-scheduling
-    cron trigger (see "Notification automation" and "Automated reminder
-    scheduling").
+10. ~~Connect real WhatsApp and SMS providers, callbacks~~ SMS is out of
+    scope by product decision (WhatsApp only). WhatsApp's client fails
+    safely and distinguishes retryable from permanent errors; the
+    delivery-status webhook is built and verified live. Still open: the
+    actual Meta Business account/template approval (an operator task —
+    nothing here is blocked on it), template param validation, and the
+    reminder-scheduling cron trigger (see "Notification automation" and
+    "Automated reminder scheduling").
 11. Complete audit coverage and the server authorization review.
 12. Connect public booking and finalize landing/legal content.
 13. Add integration and end-to-end test coverage.

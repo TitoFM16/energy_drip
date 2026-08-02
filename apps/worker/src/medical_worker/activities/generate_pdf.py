@@ -4,13 +4,13 @@ import uuid
 import dramatiq
 import structlog
 
-from medical_api.core.database import async_session_factory
 from medical_api.integrations.object_storage.client import download_bytes, upload_bytes
 from medical_api.integrations.pdf.generator import render_consent_pdf, sha256_hash
 from medical_api.modules.consents.models import ConsentDocument
 from medical_api.modules.consents.repository import ConsentRepository
 from medical_api.modules.patients.repository import PatientRepository
 from medical_worker import broker  # noqa: F401  (registers the Redis broker)
+from medical_worker.database import async_session_factory
 
 logger = structlog.get_logger(__name__)
 

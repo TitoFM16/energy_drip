@@ -30,8 +30,22 @@ class Settings(BaseSettings):
     # docs/missing_features.md. No SMS provider is integrated.
     whatsapp_api_token: str = ""
     whatsapp_phone_number_id: str = ""
+    # Meta App Secret — used to verify the X-Hub-Signature-256 header on
+    # incoming delivery-status webhook callbacks (never sent to Meta).
+    whatsapp_app_secret: str = ""
+    # Arbitrary shared string configured in Meta's App Dashboard when
+    # registering the webhook URL; Meta echoes it back on the GET
+    # challenge-response handshake so we can confirm the request is really
+    # from a webhook registration attempt we authorized.
+    whatsapp_webhook_verify_token: str = ""
 
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174"]
+
+    # Base URL of the patient-web app, used to build the consent link sent
+    # over WhatsApp (`{patient_web_base_url}/c/{token}` — see
+    # apps/patient-web's router). Matches the dev-mode link staff-web shows
+    # in its own "Solicitar consentimiento" UI.
+    patient_web_base_url: str = "http://localhost:5174"
 
     @property
     def is_production(self) -> bool:

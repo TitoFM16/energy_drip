@@ -5,17 +5,19 @@ import dramatiq
 import structlog
 from sqlalchemy import select
 
-from medical_api.core.database import async_session_factory
+from medical_api.core.config import get_settings
 from medical_api.modules.consents.models import ConsentTemplate, ConsentTemplateVersion
 from medical_api.modules.consents.repository import ConsentRepository
 from medical_api.modules.consents.service import ConsentService
+from medical_api.modules.notifications.models import NotificationChannel, NotificationMessage
 from medical_api.modules.patients.repository import PatientRepository
 from medical_worker import broker  # noqa: F401  (registers the Redis broker)
 from medical_worker.activities.send_whatsapp import send_whatsapp_message
+from medical_worker.database import async_session_factory
 
 logger = structlog.get_logger(__name__)
 
-CONSENT_WEB_BASE_URL = "https://consent.example.com/c"
+settings = get_settings()
 
 
 @dramatiq.actor(max_retries=5, min_backoff=5_000, max_backoff=300_000)
@@ -51,8 +53,21 @@ async def _start(
             organization_id, patient_id, appointment_id, template_version_id
         )
         patient = await PatientRepository(session).get(organization_id, patient_id)
+        if patient is None or not patient.phone_number:
+            await session.commit()
+            return
+
+        link = f"{settings.patient_web_base_url}/c/{raw_token}"
+        message = NotificationMessage(
+            organization_id=organization_id,
+            channel=NotificationChannel.WHATSAPP,
+            recipient=patient.phone_number,
+            template_key="consent_link",
+            payload={"appointment_id": str(appointment_id), "patient_id": str(patient_id)},
+        )
+        session.add(message)
         await session.commit()
 
-    if patient and patient.phone_number:
-        link = f"{CONSENT_WEB_BASE_URL}/{raw_token}"
-        send_whatsapp_message.send(patient.phone_number, "consent_link", [patient.first_name, link])
+    send_whatsapp_message.send(
+        patient.phone_number, "consent_link", [patient.first_name, link], str(message.id)
+    )
