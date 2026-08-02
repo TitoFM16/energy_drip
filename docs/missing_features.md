@@ -79,8 +79,11 @@ therefore no longer tracked as wholly missing:
   login.
 - Added `POST/GET /api/v1/practitioners` and `PATCH /api/v1/practitioners/{id}`
   so a practitioner profile (linking an existing user to a specialty) can be
-  created without a direct database insert. No staff-web UI consumes this yet
-  — see "Settings administration" below.
+  created without a direct database insert; `PractitionerRead` now also
+  includes `full_name`/`email` (joined from the linked user) so callers don't
+  need a separate user lookup. The Agenda screen consumes this now — see
+  below — but there's still no Settings UI to create/manage practitioners
+  themselves (see "Settings administration").
 - Public organization self-registration is closed in production (`403` when
   `ENVIRONMENT=production`); the single clinic is bootstrapped once via
   `apps/api/scripts/bootstrap_clinic.py` instead. staff-web's `/register`
@@ -92,6 +95,9 @@ therefore no longer tracked as wholly missing:
   already existed. Verified live in a browser: create an invite as an admin →
   accept it → land logged-in on the dashboard; and separately, request a
   reset → follow the (dev-only) link → set a new password → log in with it.
+- The Agenda screen is now a real day-view scheduler instead of a static
+  today-only list — see "Appointment management" above for what's done and
+  what's still open.
 
 ## Priority levels
 
@@ -167,28 +173,49 @@ Acceptance criteria:
 
 ## 2. Staff application and clinical workflows
 
-### P1: Appointment management
+### P1: Appointment management — day view resolved, rest still open
 
-The backend can create appointments, reject practitioner overlaps, change
-status, manage recurring availability rules, and compute available slots. The
-Agenda screen still only lists the current day, and several scheduling rules
-remain incomplete.
+The Agenda screen (`apps/staff-web/src/routes/agenda/`) now picks a
+practitioner, navigates by single day, shows that day's appointments with
+status-change actions (Confirmar/Marcar atendida/No asistió/Cancelar), lists
+the practitioner's open slots for the day from the real availability API, and
+books a new appointment against a selected slot with a patient search picker.
+`PractitionerRead` (`scheduling/schemas.py`) now includes `full_name`/`email`
+(joined from the linked user in `PractitionerService`) so the UI has a name to
+show instead of a bare `user_id`. Verified live in a browser: pick
+practitioner → see open slots → book a slot with a searched patient → new
+appointment appears and the slot disappears from availability → Confirmar
+updates its status live.
 
-Acceptance criteria:
+Remaining acceptance criteria:
 
-- Calendar/day/week views.
-- Create, edit, reschedule, confirm, cancel, and mark missed appointments.
-- Select patient, practitioner, location, room, and treatment.
-- Use the availability endpoint in staff and public booking interfaces.
+- Week view (day view only for now).
+- Edit/reschedule an existing appointment (only status changes and creation
+  exist; no way to move a booked appointment to a different slot).
+- Select location, room, and treatment when booking (only patient +
+  practitioner + slot today).
+- Use the availability endpoint in the public booking interface too (staff-web
+  is done; landing page's `/reservar` still doesn't use it — see "Connected
+  public booking experience").
 - Validate that newly created and rescheduled appointments fall inside allowed
-  availability, not merely that they avoid practitioner conflicts.
-- Reject room conflicts as well as practitioner conflicts.
+  availability, not merely that they avoid practitioner conflicts (today
+  nothing stops booking outside a practitioner's availability rules via the
+  raw `POST /appointments` call — the UI only ever offers computed slots, but
+  the API itself doesn't enforce it).
+- Reject room conflicts as well as practitioner conflicts (no room selection
+  yet at all — see above).
 - Validate organization ownership of patient, practitioner, room, and related
   records.
-- Display appointment status history.
-- Trigger the appropriate outbox events after state changes.
+- Display appointment status history (the backend records it in
+  `AppointmentStatusHistory`; nothing surfaces it in the UI).
+- Trigger the appropriate outbox events after state changes (only
+  `appointment.scheduled` and `appointment.cancelled` currently enqueue
+  events; confirm/checked_in/completed/no_show don't).
 - Convert location-local availability rules to UTC correctly; the current
-  implementation interprets rule times directly as UTC.
+  implementation interprets rule times directly as UTC, and the Agenda UI
+  intentionally displays everything in UTC to match that (see
+  `apps/staff-web/src/routes/agenda/date-utils.ts`) rather than papering over
+  the gap with local-time formatting.
 - Support exceptions such as holidays, leave, blocked periods, and one-off
   availability.
 - Validate `duration_minutes` with safe positive bounds and prevent invalid or
@@ -823,9 +850,11 @@ Acceptance criteria:
    including the org-ID-free login screen. Still open: out-of-band token
    delivery (see "Staff authentication experience").
 4. Finish patient and medical-history management.
-5. Connect the Agenda UI to the new availability APIs (and the Settings UI to
-   the new practitioner API) and finish scheduling, room-conflict, exception,
-   and timezone validation.
+5. ~~Connect the Agenda UI to the new availability APIs~~ Done — day view,
+   booking, and status changes are live. Still open from this item: the
+   Settings UI for the practitioner API, week view, editing/rescheduling, and
+   room-conflict/exception/timezone validation (see "Appointment
+   management").
 6. Finish treatment plans, sessions, formulas, evolution, and follow-ups.
 7. Add consent-template publishing and strict submission validation.
 8. Build the staff consent-review and signed-document workflow.

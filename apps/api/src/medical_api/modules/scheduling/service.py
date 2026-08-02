@@ -23,6 +23,7 @@ from medical_api.modules.scheduling.schemas import (
     AvailabilityRuleCreate,
     AvailableSlot,
     PractitionerCreate,
+    PractitionerRead,
     PractitionerUpdate,
 )
 
@@ -179,7 +180,27 @@ class PractitionerService:
         self.repository = repository
         self.users = users
 
-    async def create(self, organization_id: uuid.UUID, data: PractitionerCreate) -> Practitioner:
+    async def _to_read(self, practitioner: Practitioner) -> PractitionerRead:
+        # Practitioner has no name of its own — it's a role attached to an
+        # existing User — so every read needs a join back to that user for
+        # display purposes (there's no practitioner list UI that would want
+        # just a bare user_id).
+        user = await self.users.get_by_id(practitioner.user_id)
+        if user is None:
+            raise NotFoundError("User", practitioner.user_id)
+        return PractitionerRead(
+            id=practitioner.id,
+            organization_id=practitioner.organization_id,
+            user_id=practitioner.user_id,
+            specialty=practitioner.specialty,
+            is_active=practitioner.is_active,
+            full_name=user.full_name,
+            email=user.email,
+        )
+
+    async def create(
+        self, organization_id: uuid.UUID, data: PractitionerCreate
+    ) -> PractitionerRead:
         user = await self.users.get_by_id(data.user_id)
         if user is None or user.organization_id != organization_id:
             raise NotFoundError("User", data.user_id)
@@ -187,17 +208,19 @@ class PractitionerService:
             raise ConflictError("This user already has a practitioner profile")
 
         practitioner = Practitioner(organization_id=organization_id, **data.model_dump())
-        return await self.repository.create(practitioner)
+        practitioner = await self.repository.create(practitioner)
+        return await self._to_read(practitioner)
 
-    async def list_active(self, organization_id: uuid.UUID) -> list[Practitioner]:
-        return await self.repository.list_active(organization_id)
+    async def list_active(self, organization_id: uuid.UUID) -> list[PractitionerRead]:
+        practitioners = await self.repository.list_active(organization_id)
+        return [await self._to_read(p) for p in practitioners]
 
     async def update(
         self, organization_id: uuid.UUID, practitioner_id: uuid.UUID, data: PractitionerUpdate
-    ) -> Practitioner:
+    ) -> PractitionerRead:
         practitioner = await self.repository.get(organization_id, practitioner_id)
         if practitioner is None:
             raise NotFoundError("Practitioner", practitioner_id)
         for field, value in data.model_dump(exclude_unset=True).items():
             setattr(practitioner, field, value)
-        return practitioner
+        return await self._to_read(practitioner)

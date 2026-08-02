@@ -85,5 +85,7 @@ class PractitionerRead(BaseModel):
     user_id: uuid.UUID
     specialty: str | None
     is_active: bool
+    full_name: str
+    email: str
 
     model_config = {"from_attributes": True}

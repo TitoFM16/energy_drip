@@ -1,14 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../../shared/utilities/api';
+import type { Appointment } from '../scheduling/types';
 
-export interface Appointment {
-  id: string;
-  patient_id: string;
-  practitioner_id: string;
-  starts_at: string;
-  ends_at: string;
-  status: string;
-}
+export type { Appointment };
 
 export function useAppointments(start: string, end: string) {
   return useQuery({
