@@ -1,7 +1,7 @@
 # Built from the repo root (see docker-compose.yml `context: .`): pnpm
 # workspace install needs pnpm-workspace.yaml/pnpm-lock.yaml and every
 # declared workspace member present, not just this app's own directory.
-FROM node:22-slim
+FROM node:26-slim
 
 RUN corepack enable pnpm && corepack prepare pnpm@9.12.0 --activate
 
