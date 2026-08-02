@@ -98,6 +98,11 @@ therefore no longer tracked as wholly missing:
 - The Agenda screen is now a real day-view scheduler instead of a static
   today-only list — see "Appointment management" above for what's done and
   what's still open.
+- Settings now has a working Practitioners section (list, create, edit
+  specialty, toggle active/inactive) — see "Settings administration" above.
+- The Patients screen now has live search, patient creation, and a detail
+  page for editing name/phone/email and toggling active status — see
+  "Patient management" above for what's done and what's still open.
 
 ## Priority levels
 
@@ -221,16 +226,27 @@ Remaining acceptance criteria:
 - Validate `duration_minutes` with safe positive bounds and prevent invalid or
   excessive slot generation.
 
-### P1: Patient management
+### P1: Patient management — search/create/edit done, records still open
 
-The Patients screen currently lists basic patient data but lacks the complete
-record-management experience.
+The Patients screen (`apps/staff-web/src/routes/patients/`) now has live
+search (name or document ID, `GET /api/v1/patients?q=`), an inline creation
+form, and a detail page (`/patients/:id`) that edits name/phone/email and
+toggles active/inactive. Verified live in a browser: create a patient →
+search finds it → open its detail page → edit phone number → save → change
+persists back in the list.
 
-Acceptance criteria:
+Remaining acceptance criteria:
 
-- Search, pagination, creation, editing, and patient detail screens.
-- Contact details and emergency contacts.
-- Medical history, allergies, conditions, and medications.
+- Pagination (the search endpoint caps at 25 results server-side; the UI has
+  no way to page past that yet).
+- Edit document ID and date of birth — the backend's `PatientUpdate` schema
+  doesn't accept either field today, so they're shown read-only on the detail
+  page rather than silently failing to save.
+- Contact details and emergency contacts — `PatientContact` and
+  `EmergencyContact` already exist as database models
+  (`modules/patients/models.py`) but have no API or UI at all.
+- Medical history, allergies, conditions, and medications (see "Complete
+  medical-record API" below).
 - Duplicate-patient detection and a controlled merge process.
 - Server-side authorization for every record and action.
 - Audit patient views and modifications.
@@ -865,7 +881,10 @@ Acceptance criteria:
    ~~Still open: invite-acceptance and password-reset screens.~~ All done,
    including the org-ID-free login screen. Still open: out-of-band token
    delivery (see "Staff authentication experience").
-4. Finish patient and medical-history management.
+4. ~~Finish patient and medical-history management.~~ Patient search, create,
+   and edit are done. Still open: pagination, contact/emergency-contact
+   records, and the full medical-history API/UI (see "Patient management" and
+   "Complete medical-record API").
 5. ~~Connect the Agenda UI to the new availability APIs (and the Settings UI
    to the new practitioner API)~~ Done — day view, booking, status changes,
    and practitioner management are all live. Still open from this item: week

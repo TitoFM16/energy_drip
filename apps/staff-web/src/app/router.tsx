@@ -6,6 +6,7 @@ import { DashboardPage } from '../routes/dashboard';
 import { ForgotPasswordPage } from '../routes/forgot-password';
 import { LoginPage } from '../routes/login';
 import { NotificationsPage } from '../routes/notifications';
+import { PatientDetailPage } from '../routes/patients/detail';
 import { PatientsPage } from '../routes/patients';
 import { ResetPasswordPage } from '../routes/reset-password';
 import { SettingsPage } from '../routes/settings';
@@ -29,6 +30,7 @@ export const router = createBrowserRouter([
           { index: true, element: <DashboardPage /> },
           { path: 'agenda', element: <AgendaPage /> },
           { path: 'patients', element: <PatientsPage /> },
+          { path: 'patients/:patientId', element: <PatientDetailPage /> },
           { path: 'treatments', element: <TreatmentsPage /> },
           { path: 'consents', element: <ConsentsPage /> },
           { path: 'notifications', element: <NotificationsPage /> },
