@@ -102,7 +102,6 @@ services:
       S3_BUCKET: medical-platform
       WHATSAPP_API_TOKEN: ${WHATSAPP_API_TOKEN:-}
       WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
-      SMS_PROVIDER_API_KEY: ${SMS_PROVIDER_API_KEY:-}
     volumes:
       - ./apps/api:/workspace/apps/api
       - ./apps/worker:/workspace/apps/worker

@@ -6,7 +6,6 @@ broker so the CLI worker can execute them.
 
 from medical_worker.activities import (  # noqa: F401
     generate_pdf,
-    send_sms,
     send_whatsapp,
     update_delivery_status,
 )

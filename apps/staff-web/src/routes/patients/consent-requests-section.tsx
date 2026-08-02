@@ -96,7 +96,7 @@ export function ConsentRequestsSection({ patientId }: ConsentRequestsSectionProp
           <code className="break-all rounded bg-amber-100 px-1">
             http://localhost:5174/c/{createRequest.data.token}
           </code>{' '}
-          (en producción se envía por WhatsApp/SMS, no se muestra aquí).
+          (en producción se envía por WhatsApp, no se muestra aquí).
         </div>
       )}
     </section>

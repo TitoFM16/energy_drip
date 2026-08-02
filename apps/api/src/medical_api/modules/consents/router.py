@@ -120,7 +120,7 @@ async def create_consent_request(
     appointment_id: uuid.UUID | None = None,
 ) -> dict[str, str]:
     """Creates a single-use consent link. Only the token hash is persisted —
-    the raw token returned here is what gets embedded in the SMS/WhatsApp link.
+    the raw token returned here is what gets embedded in the WhatsApp link.
     """
     service = ConsentService(ConsentRepository(session), session)
     request, raw_token = await service.create_request(

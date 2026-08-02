@@ -126,6 +126,11 @@ therefore no longer tracked as wholly missing:
 - `test_auth_flows.py` no longer leaves permanent rows in the database —
   every test now runs inside a rolled-back transaction — see "Backend
   integration tests" above.
+- SMS is out of scope by product decision — WhatsApp is the only outbound
+  channel. The now-dead `integrations/sms/` code is removed, and the
+  WhatsApp client fails fast (no HTTP call at all) when credentials aren't
+  configured instead of burning through 5 retries against Meta's API with
+  an empty token — see "Notification automation" above.
 
 ## Priority levels
 
@@ -150,7 +155,7 @@ of outcome, so neither leaks account existence.
 
 Remaining acceptance criteria:
 
-- Deliver invite and password-reset tokens out of band (WhatsApp/SMS/email)
+- Deliver invite and password-reset tokens out of band (WhatsApp/email)
   rather than returning them directly in the API response — see the
   dev-mode note in `identity/schemas.py`. The forgot-password screen only
   surfaces the dev-mode token behind `import.meta.env.DEV` (stripped from
@@ -564,36 +569,86 @@ Acceptance criteria:
 
 ## 4. Notification automation
 
-### P0: Real SMS provider integration
+### Product decision (2026-08-02): WhatsApp only, no SMS
 
-The current SMS client calls an example domain and is not connected to a real
-provider.
+The clinic decided to use Meta's WhatsApp Business Cloud API exclusively —
+no SMS provider. `integrations/sms/` (client + worker activity) has been
+removed; `sms_provider_api_key`/`SMS_PROVIDER_API_KEY` are gone from
+`Settings`, `.env.example`, and `docker-compose.yml`. `send_sms_message` was
+never actually wired into any workflow (`appointment_confirmation`,
+`appointment_reminders`, `consent_request` all only ever called
+`send_whatsapp_message`), so removing it was pure dead-code cleanup with no
+behavior change. `NotificationChannel.SMS` remains in the model/DB enum
+(dropping a Postgres enum value cleanly isn't worth the migration risk for
+zero functional benefit) but nothing in the app can produce a message with
+that channel anymore. User-facing copy that mentioned "WhatsApp/SMS"
+(landing FAQ, the patient-detail consent-request dev-mode banner) now says
+WhatsApp only.
 
-Acceptance criteria:
+### P0: WhatsApp production configuration — safe failure handling done
 
-- Select and integrate a production SMS provider.
-- Store provider credentials outside source control.
-- Normalize recipient numbers.
-- Map provider IDs and errors to internal notification records.
-- Implement retries only for retryable failures.
-- Provide a development or sandbox adapter.
+`integrations/whatsapp/client.py` calls Meta's Cloud API directly (no BSP
+middleman — this is already the cheapest way to do it, since there's no BSP
+markup on top of Meta's per-conversation pricing). Two of the five
+acceptance criteria are now handled in code:
 
-### P0: WhatsApp production configuration
+- **Safe development behavior when credentials are absent**: previously,
+  empty `WHATSAPP_API_TOKEN`/`WHATSAPP_PHONE_NUMBER_ID` (the local dev
+  default) meant every send attempt actually POSTed to Meta's API with a
+  blank bearer token and an empty phone-number-id path segment, then let
+  dramatiq retry that guaranteed-permanent failure 5 times with growing
+  backoff. `WhatsAppClient.send_template_message` now checks for this
+  up front and raises `WhatsAppNotConfiguredError` immediately — verified
+  live: calling it locally now fails instantly with a clear message and
+  makes zero HTTP requests, instead of hammering Meta's servers.
+- **Handle provider rate limits and retryable errors**: the client now
+  raises one of three typed exceptions —
+  `WhatsAppTransientError` (429, 5xx, or a network-level failure — meant to
+  be retried), `WhatsAppRejectedError` (any other 4xx: bad/unapproved
+  template name, invalid recipient, revoked token — retrying produces the
+  same failure every time), or `WhatsAppNotConfiguredError` (see above).
+  The worker's `send_whatsapp_message` actor catches the two permanent-failure
+  types, logs, and returns without re-raising — so dramatiq's retry policy
+  only ever kicks in for the transient case, matching what
+  `max_retries=5, min_backoff=5_000, max_backoff=300_000` was actually meant
+  for. Verified live: unconfigured credentials now log
+  `whatsapp.send_failed_permanently` once and stop, rather than retrying 5
+  times.
 
-Acceptance criteria:
+Remaining acceptance criteria:
 
-- Configure the WhatsApp Business account and approved templates.
-- Validate template names, locales, and parameter ordering.
-- Store tokens securely and support rotation.
-- Handle provider rate limits and retryable errors.
-- Provide safe development behavior when credentials are absent.
+- Configure the actual WhatsApp Business account and get message templates
+  approved through Meta — this is an operator task (Meta Business Manager
+  account, phone number verification, template submission/review) that
+  can't be done from this codebase; nothing here is blocked on it, but no
+  message can actually be _sent_ until it happens.
+- Validate template names, locales, and parameter ordering before sending
+  (today the client trusts whatever `template_name`/`params` a caller
+  passes — no check that the param count matches what the approved
+  template expects, or that `language.code` is right for a given
+  template).
+- Store tokens securely and support rotation (still a plain env var, same
+  as every other secret in this codebase — no rotation mechanism).
 
 ### P1: Delivery callbacks and message-state reconciliation
 
+No webhook endpoint exists yet to receive Meta's delivery-status callbacks
+— `update_delivery_status` (`apps/worker/src/medical_worker/activities/`)
+is a dramatiq actor that applies a status update to a `NotificationMessage`
+row, but nothing calls it; there's no `POST /webhooks/whatsapp` route
+anywhere in `apps/api`. This is fully buildable without live Meta
+credentials (Meta's webhook signature scheme — HMAC-SHA256 over the raw
+body using the app secret — and its challenge-response verification for
+registering the webhook URL are both public/documented) and is the natural
+next step once the above is picked back up.
+
 Acceptance criteria:
 
-- Authenticated webhook endpoints for WhatsApp and the selected SMS provider.
-- Verify webhook signatures or provider authentication.
+- An authenticated webhook endpoint for WhatsApp status callbacks, including
+  the `GET` challenge-response handshake Meta requires when registering a
+  webhook URL.
+- Verify Meta's webhook signature (`X-Hub-Signature-256`) rather than
+  trusting the payload outright.
 - Process duplicate and out-of-order callbacks idempotently.
 - Track queued, accepted, sent, delivered, failed, and undeliverable states.
 - Preserve provider message IDs and normalized failure reasons.
@@ -628,7 +683,7 @@ Acceptance criteria:
 Acceptance criteria:
 
 - Record channel preferences and legally required opt-in evidence.
-- Process SMS and WhatsApp opt-out signals.
+- Process WhatsApp opt-out signals.
 - Prevent nonessential sends after opt-out.
 - Distinguish transactional/clinical messages from marketing messages.
 - Record preference changes in the audit trail.
@@ -1085,7 +1140,13 @@ Acceptance criteria:
    decisions/rationale, filtering, and the signed-document viewer (see
    "Consent review workspace").
 9. Configure private, versioned object storage and document verification.
-10. Connect real WhatsApp and SMS providers, callbacks, and reminder scheduling.
+10. ~~Connect real WhatsApp and SMS providers~~ SMS is out of scope by
+    product decision (WhatsApp only). WhatsApp's client now fails safely and
+    distinguishes retryable from permanent errors — still open: the actual
+    Meta Business account/template approval (an operator task), template
+    param validation, delivery-callback webhook, and reminder-scheduling
+    cron trigger (see "Notification automation" and "Automated reminder
+    scheduling").
 11. Complete audit coverage and the server authorization review.
 12. Connect public booking and finalize landing/legal content.
 13. Add integration and end-to-end test coverage.

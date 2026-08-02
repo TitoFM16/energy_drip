@@ -14,7 +14,7 @@ logger = structlog.get_logger(__name__)
 
 @dramatiq.actor(max_retries=3)
 def update_delivery_status(provider_message_id: str, status: str) -> None:
-    """Applies a delivery-status webhook callback from WhatsApp/SMS providers
+    """Applies a delivery-status webhook callback from the WhatsApp provider
     to the matching `NotificationMessage` row.
     """
     asyncio.run(_update(provider_message_id, NotificationStatus(status)))

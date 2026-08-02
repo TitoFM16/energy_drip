@@ -25,9 +25,11 @@ class Settings(BaseSettings):
     password_reset_expire_hours: int = 2
     algorithm: str = "HS256"
 
+    # WhatsApp is the only outbound notification channel this product uses —
+    # see the "Product scope correction" / notification-automation notes in
+    # docs/missing_features.md. No SMS provider is integrated.
     whatsapp_api_token: str = ""
     whatsapp_phone_number_id: str = ""
-    sms_provider_api_key: str = ""
 
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174"]
 
