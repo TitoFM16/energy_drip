@@ -111,18 +111,15 @@ therefore no longer tracked as wholly missing:
   a review queue with per-submission detail, and the patient detail page can
   request a consent against a published template. See "Consent-template
   administration and publishing" and "Consent review workspace" above for
-  what's done and what's still open. Also fixed: the local MinIO dev bucket
-  (`medical-platform`) didn't exist, so any consent submission 500'd on
-  signature upload — created via
-  `aws --endpoint-url http://localhost:9000 s3 mb s3://medical-platform`.
-  This isn't automated anywhere yet (see "Verify and harden the Docker
-  development stack" in Infrastructure below) — a fresh `docker compose up`
-  will hit the same 500 until bucket creation is added to the dev stack's
-  startup.
+  what's done and what's still open.
 - `uv run pytest` now works from the repository root — see "Repair the root
   Python test command" above.
 - `pnpm test` and `make test` both pass now — see "Add frontend tests and
   repair `make test`" above.
+- The local MinIO dev bucket is now created automatically on API startup
+  (non-production only) — see "Verify and harden the Docker development
+  stack" above. A fresh `docker compose up` no longer 500s on the first
+  consent submission.
 
 ## Priority levels
 
@@ -921,16 +918,30 @@ Acceptance criteria:
 
 ## 10. Infrastructure and production operations
 
-### P0: Verify and harden the Docker development stack
+### P0: Verify and harden the Docker development stack — MinIO bucket init done
 
 The Compose and Dockerfile setup exists but needs a repeatable end-to-end
 verification.
 
-Acceptance criteria:
+MinIO bucket initialization is now automatic: `ensure_bucket_exists()`
+(`apps/api/src/medical_api/integrations/object_storage/client.py`) runs in
+the API's FastAPI `lifespan` startup hook, gated to
+`not settings.is_production` (a production bucket should be provisioned by
+infrastructure with its own lifecycle/versioning/access policy, not created
+ad hoc by the app with whatever runtime credentials it happens to have). It
+uses `head_bucket`/`create_bucket` so it's a no-op once the bucket already
+exists. Verified: deleted the bucket, restarted the `api` container, bucket
+reappeared with no manual step; restarted again with the bucket already
+present — no error, confirming idempotency; ran a full consent submission
+immediately after — no `NoSuchBucket` 500 (this was the exact failure this
+session hit manually before this fix existed).
 
-- Fresh checkout can build and start every service.
+Remaining acceptance criteria:
+
+- Fresh checkout can build and start every service (not verified end-to-end
+  from a truly clean checkout this session — only individual container
+  restarts against already-provisioned volumes).
 - Migrations run exactly once and failures are visible.
-- MinIO bucket initialization is automatic.
 - API, worker, queue, and frontend health checks are available.
 - Development credentials are clearly marked and cannot be reused in
   production.

@@ -1,5 +1,6 @@
 import boto3
 from botocore.client import Config
+from botocore.exceptions import ClientError
 
 from medical_api.core.config import get_settings
 
@@ -14,6 +15,25 @@ def get_s3_client():
         aws_secret_access_key=settings.s3_secret_key,
         config=Config(signature_version="s3v4"),
     )
+
+
+def ensure_bucket_exists() -> None:
+    """Creates the configured bucket if it's missing.
+
+    Dev/test convenience only — call sites gate this on `not
+    settings.is_production` (see `main.py`'s lifespan). A production bucket
+    should be provisioned by infrastructure with its own lifecycle,
+    versioning, and access policy, not created ad hoc by the app on boot
+    with whatever permissions its runtime credentials happen to have.
+    """
+    client = get_s3_client()
+    try:
+        client.head_bucket(Bucket=settings.s3_bucket)
+    except ClientError as exc:
+        error_code = exc.response.get("Error", {}).get("Code")
+        if error_code not in ("404", "NoSuchBucket"):
+            raise
+        client.create_bucket(Bucket=settings.s3_bucket)
 
 
 def upload_bytes(key: str, data: bytes, content_type: str) -> None:

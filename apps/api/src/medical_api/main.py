@@ -7,6 +7,7 @@ from medical_api.api.error_handlers import register_error_handlers
 from medical_api.api.router import api_router
 from medical_api.core.config import get_settings
 from medical_api.core.logging import configure_logging
+from medical_api.integrations.object_storage.client import ensure_bucket_exists
 
 settings = get_settings()
 
@@ -14,6 +15,13 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     configure_logging()
+    if not settings.is_production:
+        # Dev/test convenience: the local MinIO bucket doesn't exist until
+        # something creates it, and nothing in the Docker stack did — the
+        # first consent submission would 500 on signature upload with
+        # NoSuchBucket. See ensure_bucket_exists() for why this is gated to
+        # non-production.
+        ensure_bucket_exists()
     yield
 
 
