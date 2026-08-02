@@ -1,3 +1,4 @@
+import { Badge, Callout, ErrorText } from '@medical-platform/ui';
 import { useEffect, useState } from 'react';
 import { useAppointments } from '../../features/appointments/use-appointments';
 import { usePatients } from '../../features/patients/use-patients';
@@ -108,11 +109,11 @@ export function AgendaPage() {
       </div>
 
       {practitioners.data?.length === 0 && (
-        <p className="mb-6 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+        <Callout variant="warning" className="mb-6">
           No hay profesionales registrados todavía. Crea uno desde{' '}
           <code className="rounded bg-amber-100 px-1">POST /api/v1/practitioners</code> antes de
           poder agendar citas.
-        </p>
+        </Callout>
       )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -121,9 +122,7 @@ export function AgendaPage() {
             Citas del día
           </h2>
           {appointments.isLoading && <p className="text-slate-500">Cargando citas...</p>}
-          {appointments.isError && (
-            <p className="text-red-600">No se pudo cargar la agenda del día.</p>
-          )}
+          {appointments.isError && <ErrorText>No se pudo cargar la agenda del día.</ErrorText>}
           {!appointments.isLoading && dayAppointments.length === 0 && (
             <p className="text-slate-500">No hay citas programadas para este día.</p>
           )}
@@ -137,9 +136,7 @@ export function AgendaPage() {
                     </p>
                     <p className="text-sm text-slate-500">{appointmentLabel(appointment)}</p>
                   </div>
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                    {STATUS_LABELS[appointment.status]}
-                  </span>
+                  <Badge>{STATUS_LABELS[appointment.status]}</Badge>
                 </div>
                 {!TERMINAL_STATUSES.includes(appointment.status) && (
                   <div className="flex flex-wrap gap-2">
@@ -183,7 +180,7 @@ export function AgendaPage() {
             <>
               {availability.isLoading && <p className="text-slate-500">Cargando horarios...</p>}
               {availability.isError && (
-                <p className="text-red-600">No se pudieron cargar los horarios disponibles.</p>
+                <ErrorText>No se pudieron cargar los horarios disponibles.</ErrorText>
               )}
               {availability.data && availability.data.length === 0 && (
                 <p className="text-slate-500">

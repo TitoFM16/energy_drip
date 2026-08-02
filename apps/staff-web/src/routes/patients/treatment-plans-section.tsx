@@ -1,3 +1,4 @@
+import { Badge, Button, ErrorText, TextField } from '@medical-platform/ui';
 import { useState } from 'react';
 import { usePractitioners } from '../../features/scheduling/use-practitioners';
 import { useTreatmentDefinitions } from '../../features/treatments/use-treatment-definitions';
@@ -54,7 +55,7 @@ export function TreatmentPlansSection({ patientId }: TreatmentPlansSectionProps)
       </h2>
 
       {plans.isLoading && <p className="text-slate-500">Cargando planes...</p>}
-      {plans.isError && <p className="text-red-600">No se pudieron cargar los planes.</p>}
+      {plans.isError && <ErrorText>No se pudieron cargar los planes.</ErrorText>}
       {plans.data && plans.data.length === 0 && (
         <p className="mb-4 text-slate-500">Este paciente no tiene planes de tratamiento.</p>
       )}
@@ -76,9 +77,7 @@ export function TreatmentPlansSection({ patientId }: TreatmentPlansSectionProps)
                   {plan.notes ? ` · ${plan.notes}` : ''}
                 </p>
               </div>
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                {STATUS_LABELS[plan.status]}
-              </span>
+              <Badge>{STATUS_LABELS[plan.status]}</Badge>
             </button>
             {expandedPlanId === plan.id && <PlanDetail planId={plan.id} status={plan.status} />}
           </div>
@@ -108,32 +107,23 @@ export function TreatmentPlansSection({ patientId }: TreatmentPlansSectionProps)
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-          Sesiones planificadas
-          <input
-            type="number"
-            min={1}
-            value={sessionCount}
-            onChange={(e) => setSessionCount(Number(e.target.value))}
-            className="w-32 rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-          Notas
-          <input
-            type="text"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={!selectedDefinitionId || createPlan.isPending}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
-        >
+        <TextField
+          label="Sesiones planificadas"
+          type="number"
+          min={1}
+          value={sessionCount}
+          onChange={(e) => setSessionCount(Number(e.target.value))}
+          className="w-32"
+        />
+        <TextField
+          label="Notas"
+          type="text"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+        />
+        <Button type="submit" disabled={!selectedDefinitionId || createPlan.isPending}>
           {createPlan.isPending ? 'Creando...' : 'Nuevo plan'}
-        </button>
+        </Button>
       </form>
     </section>
   );
@@ -207,13 +197,14 @@ function PlanDetail({ planId, status }: { planId: string; status: TreatmentPlanS
                 className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
               />
             </label>
-            <button
+            <Button
               type="submit"
+              variant="secondary"
+              size="sm"
               disabled={!practitionerId || recordSession.isPending}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40"
             >
               {recordSession.isPending ? 'Guardando...' : 'Registrar sesión'}
-            </button>
+            </Button>
           </form>
           <div className="flex gap-2">
             <button

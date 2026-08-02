@@ -1,14 +1,10 @@
+import type { Schemas } from '@medical-platform/api-client';
+import { Badge } from '@medical-platform/ui';
 import { useQuery } from '@tanstack/react-query';
 import { PageHeading } from '../../shared/components/app-shell';
 import { apiFetch } from '../../shared/utilities/api';
 
-interface NotificationMessage {
-  id: string;
-  channel: string;
-  status: string;
-  recipient: string;
-  template_key: string;
-}
+type NotificationMessage = Schemas['NotificationMessageRead'];
 
 export function NotificationsPage() {
   const { data, isLoading } = useQuery({
@@ -26,9 +22,7 @@ export function NotificationsPage() {
             <span>
               {message.channel} · {message.template_key} · {message.recipient}
             </span>
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium">
-              {message.status}
-            </span>
+            <Badge>{message.status}</Badge>
           </div>
         ))}
       </div>

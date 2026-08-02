@@ -1,3 +1,4 @@
+import { Button } from '@medical-platform/ui';
 import { useNavigate, useParams } from 'react-router-dom';
 import { DynamicForm } from '../../features/dynamic-form/dynamic-form';
 import { hasIncompleteRequiredAnswers } from '../../features/dynamic-form/validation';
@@ -19,14 +20,15 @@ export function MedicalQuestionnairePage() {
     <div className="flex flex-col gap-6">
       <h1 className="text-xl font-bold text-slate-900">Filtro médico</h1>
       <DynamicForm questions={form.questions} answers={answers} onChange={setAnswer} />
-      <button
+      <Button
         type="button"
+        size="lg"
+        fullWidth
         disabled={requiredMissing}
         onClick={() => navigate(`/c/${token}/treatment-information`)}
-        className="rounded-lg bg-slate-900 py-4 text-base font-semibold text-white disabled:opacity-40"
       >
         Continuar
-      </button>
+      </Button>
     </div>
   );
 }

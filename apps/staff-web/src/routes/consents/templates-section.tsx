@@ -1,3 +1,4 @@
+import { Badge, Button, ErrorText, TextAreaField, TextField } from '@medical-platform/ui';
 import { useState } from 'react';
 import {
   useConsentTemplates,
@@ -82,7 +83,7 @@ export function TemplatesSection() {
       </h2>
 
       {templates.isLoading && <p className="text-slate-500">Cargando plantillas...</p>}
-      {templates.isError && <p className="text-red-600">No se pudieron cargar las plantillas.</p>}
+      {templates.isError && <ErrorText>No se pudieron cargar las plantillas.</ErrorText>}
       {templates.data && templates.data.length === 0 && (
         <p className="mb-4 text-slate-500">Todavía no hay plantillas.</p>
       )}
@@ -100,9 +101,7 @@ export function TemplatesSection() {
             </div>
             {template.latest_version &&
               (template.latest_version.published_at ? (
-                <span className="rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
-                  Publicada
-                </span>
+                <Badge variant="success">Publicada</Badge>
               ) : (
                 <button
                   type="button"
@@ -126,26 +125,20 @@ export function TemplatesSection() {
         onSubmit={handleCreate}
         className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4"
       >
-        <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-          Nombre de la plantilla
-          <input
-            type="text"
-            required
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-          Texto del consentimiento
-          <textarea
-            required
-            rows={4}
-            value={bodyMarkdown}
-            onChange={(e) => setBodyMarkdown(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </label>
+        <TextField
+          label="Nombre de la plantilla"
+          type="text"
+          required
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <TextAreaField
+          label="Texto del consentimiento"
+          required
+          rows={4}
+          value={bodyMarkdown}
+          onChange={(e) => setBodyMarkdown(e.target.value)}
+        />
 
         <div className="flex flex-col gap-3">
           <p className="text-sm font-medium text-slate-700">Preguntas</p>
@@ -251,16 +244,10 @@ export function TemplatesSection() {
           </button>
         </div>
 
-        {createTemplate.isError && (
-          <p className="text-sm text-red-600">No se pudo crear la plantilla.</p>
-        )}
-        <button
-          type="submit"
-          disabled={createTemplate.isPending}
-          className="w-fit rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
-        >
+        {createTemplate.isError && <ErrorText>No se pudo crear la plantilla.</ErrorText>}
+        <Button type="submit" disabled={createTemplate.isPending} className="w-fit">
           {createTemplate.isPending ? 'Creando...' : 'Crear plantilla'}
-        </button>
+        </Button>
       </form>
     </section>
   );

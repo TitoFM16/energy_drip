@@ -1,3 +1,4 @@
+import { Button, ErrorText, TextAreaField } from '@medical-platform/ui';
 import { useState } from 'react';
 import { useCreateAppointment } from '../../features/scheduling/use-create-appointment';
 import type { AvailableSlot } from '../../features/scheduling/types';
@@ -86,27 +87,20 @@ export function BookingPanel({ practitionerId, slot, onClose, onBooked }: Bookin
             )}
           </div>
         )}
-        <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-          Notas (opcional)
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={2}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </label>
+        <TextAreaField
+          label="Notas (opcional)"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={2}
+        />
         {createAppointment.isError && (
-          <p className="text-sm text-red-600">
+          <ErrorText>
             No se pudo crear la cita. Es posible que el horario ya no esté disponible.
-          </p>
+          </ErrorText>
         )}
-        <button
-          type="submit"
-          disabled={!selectedPatient || createAppointment.isPending}
-          className="rounded-lg bg-slate-900 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
-        >
+        <Button type="submit" disabled={!selectedPatient || createAppointment.isPending}>
           {createAppointment.isPending ? 'Reservando...' : 'Confirmar cita'}
-        </button>
+        </Button>
       </form>
     </div>
   );

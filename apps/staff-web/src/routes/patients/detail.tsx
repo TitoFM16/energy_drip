@@ -1,3 +1,4 @@
+import { Button, ErrorText, TextField } from '@medical-platform/ui';
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { usePatient } from '../../features/patients/use-patient';
@@ -27,7 +28,7 @@ export function PatientDetailPage() {
 
   if (!patientId) return null;
   if (isLoading) return <p className="text-slate-500">Cargando paciente...</p>;
-  if (isError || !patient) return <p className="text-red-600">No se pudo cargar el paciente.</p>;
+  if (isError || !patient) return <ErrorText>No se pudo cargar el paciente.</ErrorText>;
 
   async function handleSave(event: React.FormEvent) {
     event.preventDefault();
@@ -64,65 +65,49 @@ export function PatientDetailPage() {
         onSubmit={handleSave}
         className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-2"
       >
-        <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-          Nombre
-          <input
-            type="text"
-            required
-            value={firstName}
-            onChange={(e) => setFirstName(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-          Apellido
-          <input
-            type="text"
-            required
-            value={lastName}
-            onChange={(e) => setLastName(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-          Teléfono
-          <input
-            type="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-          Correo electrónico
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </label>
+        <TextField
+          label="Nombre"
+          type="text"
+          required
+          value={firstName}
+          onChange={(e) => setFirstName(e.target.value)}
+        />
+        <TextField
+          label="Apellido"
+          type="text"
+          required
+          value={lastName}
+          onChange={(e) => setLastName(e.target.value)}
+        />
+        <TextField
+          label="Teléfono"
+          type="tel"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+        />
+        <TextField
+          label="Correo electrónico"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
         {updatePatient.isError && (
-          <p className="text-sm text-red-600 sm:col-span-2">No se pudieron guardar los cambios.</p>
+          <ErrorText className="sm:col-span-2">No se pudieron guardar los cambios.</ErrorText>
         )}
         <div className="flex items-center gap-3 sm:col-span-2">
-          <button
-            type="submit"
-            disabled={updatePatient.isPending}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
-          >
+          <Button type="submit" disabled={updatePatient.isPending}>
             {updatePatient.isPending ? 'Guardando...' : 'Guardar cambios'}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="secondary"
             disabled={updatePatient.isPending}
             onClick={() =>
               updatePatient.mutate({ patientId: patient.id, is_active: !patient.is_active })
             }
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40"
           >
             {patient.is_active ? 'Marcar como inactivo' : 'Marcar como activo'}
-          </button>
+          </Button>
         </div>
       </form>
 

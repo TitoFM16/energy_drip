@@ -1,3 +1,4 @@
+import { Button } from '@medical-platform/ui';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useConsentFlow } from '../../features/submission/use-consent-flow';
 import { StatusScreen } from '../consent-start';
@@ -22,13 +23,9 @@ export function TreatmentInformationPage() {
         Al continuar y firmar, confirmas que leíste esta información y respondiste el cuestionario
         con la verdad.
       </p>
-      <button
-        type="button"
-        onClick={() => navigate(`/c/${token}/signature`)}
-        className="rounded-lg bg-slate-900 py-4 text-base font-semibold text-white"
-      >
+      <Button type="button" size="lg" fullWidth onClick={() => navigate(`/c/${token}/signature`)}>
         Ir a firmar
-      </button>
+      </Button>
     </div>
   );
 }

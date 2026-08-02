@@ -1,3 +1,4 @@
+import { Button, ErrorText, TextField } from '@medical-platform/ui';
 import { useState } from 'react';
 import {
   useCreateTreatmentDefinition,
@@ -36,7 +37,7 @@ export function TreatmentsPage() {
       </p>
 
       {definitions.isLoading && <p className="text-slate-500">Cargando catálogo...</p>}
-      {definitions.isError && <p className="text-red-600">No se pudo cargar el catálogo.</p>}
+      {definitions.isError && <ErrorText>No se pudo cargar el catálogo.</ErrorText>}
       {definitions.data && definitions.data.length === 0 && (
         <p className="mb-4 text-slate-500">Todavía no hay tratamientos en el catálogo.</p>
       )}
@@ -73,46 +74,34 @@ export function TreatmentsPage() {
       </ul>
 
       <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-          Nombre
-          <input
-            type="text"
-            required
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-          Descripción
-          <input
-            type="text"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-          Sesiones por defecto
-          <input
-            type="number"
-            min={1}
-            required
-            value={sessionCount}
-            onChange={(e) => setSessionCount(Number(e.target.value))}
-            className="w-32 rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={createDefinition.isPending}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
-        >
+        <TextField
+          label="Nombre"
+          type="text"
+          required
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <TextField
+          label="Descripción"
+          type="text"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+        <TextField
+          label="Sesiones por defecto"
+          type="number"
+          min={1}
+          required
+          value={sessionCount}
+          onChange={(e) => setSessionCount(Number(e.target.value))}
+          className="w-32"
+        />
+        <Button type="submit" disabled={createDefinition.isPending}>
           {createDefinition.isPending ? 'Agregando...' : 'Agregar tratamiento'}
-        </button>
+        </Button>
       </form>
       {createDefinition.isError && (
-        <p className="mt-2 text-sm text-red-600">No se pudo agregar el tratamiento.</p>
+        <ErrorText className="mt-2">No se pudo agregar el tratamiento.</ErrorText>
       )}
     </div>
   );

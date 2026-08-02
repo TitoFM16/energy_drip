@@ -1,3 +1,4 @@
+import { Button, ErrorText, TextField } from '@medical-platform/ui';
 import { useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { authStorage } from '@medical-platform/auth';
@@ -42,35 +43,25 @@ export function AcceptInvitePage() {
           Elige tu nombre y una contraseña para activar tu acceso.
         </p>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-            Nombre completo
-            <input
-              type="text"
-              required
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-            Contraseña
-            <input
-              type="password"
-              required
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <button
-            type="submit"
-            disabled={acceptInvite.isPending}
-            className="mt-2 rounded-lg bg-slate-900 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
-          >
+          <TextField
+            label="Nombre completo"
+            type="text"
+            required
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+          />
+          <TextField
+            label="Contraseña"
+            type="password"
+            required
+            minLength={8}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          {error && <ErrorText>{error}</ErrorText>}
+          <Button type="submit" disabled={acceptInvite.isPending} className="mt-2">
             {acceptInvite.isPending ? 'Activando...' : 'Activar cuenta'}
-          </button>
+          </Button>
         </form>
       </div>
     </div>

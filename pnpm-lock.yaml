@@ -78,6 +78,9 @@ importers:
       '@medical-platform/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
+      '@medical-platform/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       '@tanstack/react-query':
         specifier: ^5.101.4
         version: 5.101.4(react@19.2.8)
@@ -136,6 +139,9 @@ importers:
       '@medical-platform/auth':
         specifier: workspace:*
         version: link:../../packages/auth
+      '@medical-platform/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       '@tanstack/react-query':
         specifier: ^5.101.4
         version: 5.101.4(react@19.2.8)

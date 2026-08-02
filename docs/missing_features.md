@@ -215,6 +215,18 @@ therefore no longer tracked as wholly missing:
   engineering time (WhatsApp/Meta setup, hosting/managed-database choice,
   legal review, landing content, monitoring-backend choice, branch
   protection).
+- `packages/ui` now has real, adopted components (`Button`, `Badge`,
+  `Callout`, `TextField`/`TextAreaField`, `ErrorText`) instead of one
+  unused `Button`. Scoped to staff-web and patient-web only — both already
+  shared a de facto plain-Tailwind/slate visual language that matches
+  these components; `landing`'s separate, actively-developed brand
+  identity was deliberately left untouched. Replaced 14 hand-rolled
+  primary buttons, 5 duplicated status pills, 16+ duplicated error
+  messages, and every plain-text-input form field across both apps — see
+  "Shared UI, forms, and design system" above for what's still open
+  (dialogs/tables/date-pickers — no existing duplication to extract yet;
+  design-tokens CSS files remain unused since neither app reads CSS custom
+  properties).
 
 ## Priority levels
 
@@ -1060,17 +1072,96 @@ generate-api-types`).
   (patient-web, landing) and authenticated-staff (staff-web) call paths
   never share a runtime client or auth assumptions.
 
-### P2: Shared UI, forms, and design system
+### P2: Shared UI, forms, and design system — core primitives built and adopted in staff-web/patient-web; landing deliberately excluded
 
-The shared packages currently contain only a small initial set of utilities.
+**Scope decision**: this only covers staff-web and patient-web. Both were
+already using the same de facto visual language — plain Tailwind utility
+classes on a `slate` gray palette, no custom theme — which happens to match
+`packages/ui`'s pre-existing (but previously unused) `Button` component and
+`packages/design-tokens`' color palette almost exactly. `landing` has its
+own bespoke brand identity (forest green, gold, serif headings, hand-rolled
+CSS classes) that's under active, separate development — pulling it into a
+shared internal-tool design system would mean either forcing marketing
+pages into a gray dashboard aesthetic or diluting the component library
+with two incompatible visual languages. Not touched.
+
+Before building anything, audited both apps for actual duplicated markup
+(not speculative components) — found the exact same hand-rolled patterns
+copy-pasted across essentially every route: a primary button
+(`rounded-lg bg-slate-900 ... text-white`) in 14 files, a status pill
+(`rounded-full bg-slate-100 ... text-xs`) in 5 files, a label+input wrapper
+in 12+ files, and a standalone error paragraph in 16+ files, each with
+small inconsistencies (different padding/sizing) that had crept in over
+time from copy-pasting rather than sharing.
+
+Built in `packages/ui` (`Button`, `Badge`, `Callout`, `TextField`/
+`TextAreaField`, `ErrorText`), each matching the _exact_ classes already in
+majority use rather than inventing a new look — verified field-by-field
+against real call sites before writing each component. Then actually
+adopted them:
+
+- **staff-web**: all 14 primary-button call sites, all 5 status pills
+  (including consent eligibility results — `eligible`/
+  `requires_manual_review`/`not_eligible` now map to
+  `success`/`warning`/`danger` Badge variants, consolidating three
+  slightly-different existing amber/red shades into one), every standalone
+  error paragraph, and every plain-text-input form field across patients,
+  treatments, consents, agenda, settings, and all four auth screens
+  (login, forgot/reset-password, accept-invite). `<select>`-based fields
+  and a few genuinely different bespoke patterns (pill-shaped toggle
+  chips, inline text-link "quitar" buttons, a dense inline-edit input with
+  no visible label) were deliberately left alone — they don't match what
+  these components implement, and forcing them in would just be a
+  different kind of inconsistency.
+- **patient-web**: all 5 full-width mobile CTA buttons (added a `size="lg"`
+  Button variant matching patient-web's larger touch-target sizing,
+  distinct from staff-web's compact desktop default) and the
+  signature-pad's clear/confirm buttons.
+- Also opportunistically replaced two more hand-typed interfaces with
+  generated `Schemas[...]` types while in these files (staff-web's
+  `NotificationMessage`), continuing the "Generated TypeScript API
+  contract" cleanup.
+
+Verified: full `pnpm turbo lint typecheck test build` passes clean across
+all three apps (only pre-existing, unrelated warnings remain). Live in a
+real browser: logged into staff-web and clicked through Dashboard,
+Pacientes (list, new-patient form, detail — including the secondary
+"Marcar como inactivo" button), Agenda (status badges, booking panel's
+textarea), Tratamientos, and Consentimientos (template authoring, the
+"Publicada" success badge, and the eligibility warning badge on a real
+submission), confirming pixel-for-pixel visual parity with the pre-refactor
+screenshots and zero new console errors on a fresh page load.
+patient-web's changes are lower-risk, mechanical `size="lg"` Button swaps
+with no layout changes — verified via the passing automated pipeline; a
+live click-through of the mobile consent flow wasn't completed this pass
+(session constraints), worth a quick manual check before considering this
+fully closed.
 
 Acceptance criteria:
 
-- Shared accessible form controls and validation presentation.
-- Shared dialogs, data tables, status badges, date/time controls, and error
-  states.
-- Shared design tokens used consistently by all applications.
-- Keep application-specific clinical workflows outside generic UI packages.
+- ~~Shared accessible form controls and validation presentation.~~ Done for
+  staff-web (`TextField`/`TextAreaField` support an `error` prop, though no
+  current call site actually populates one — form-level errors via
+  `ErrorText` are what's actually used today).
+- ~~Shared dialogs, data tables, status badges, date/time controls, and
+  error states.~~ Status badges and error states are done (`Badge`,
+  `ErrorText`, `Callout`). Dialogs, data tables, and date/time controls are
+  still open — neither app has a single dialog or `<table>` element today,
+  so there was no real duplication to extract; building these speculatively
+  ahead of an actual need was skipped rather than guessed at.
+- ~~Shared design tokens used consistently by all applications.~~
+  Reinterpreted rather than done as originally written: the pre-existing
+  `packages/design-tokens` CSS-custom-property files remain unused (neither
+  app reads CSS custom properties — both are pure Tailwind-utility-class
+  codebases), and wiring them in as a Tailwind v4 `@theme` would be a
+  bigger, riskier change than this pass's scope. The _components_ are the
+  practical consistency mechanism instead — each one is now the single
+  source of truth for what "primary button" or "status badge" means,
+  which is what actually eliminates the drift that existed before.
+- ~~Keep application-specific clinical workflows outside generic UI
+  packages.~~ Held: every component in `packages/ui` is domain-agnostic
+  (no patient/appointment/consent-specific logic or copy) — call sites
+  pass in their own labels/content.
 
 ## 7. Authorization, audit, and security
 

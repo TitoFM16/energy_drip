@@ -1,3 +1,4 @@
+import { Button } from '@medical-platform/ui';
 import { useRef, useState } from 'react';
 
 interface SignaturePadProps {
@@ -80,21 +81,12 @@ export function SignaturePad({ onCapture }: SignaturePadProps) {
         onPointerLeave={handlePointerUp}
       />
       <div className="flex gap-3">
-        <button
-          type="button"
-          onClick={clear}
-          className="flex-1 rounded-lg border border-slate-300 py-3 text-sm font-medium"
-        >
+        <Button type="button" variant="secondary" onClick={clear} className="flex-1">
           Borrar
-        </button>
-        <button
-          type="button"
-          onClick={confirm}
-          disabled={!hasStroke}
-          className="flex-1 rounded-lg bg-slate-900 py-3 text-sm font-semibold text-white disabled:opacity-40"
-        >
+        </Button>
+        <Button type="button" onClick={confirm} disabled={!hasStroke} className="flex-1">
           Confirmar firma
-        </button>
+        </Button>
       </div>
     </div>
   );

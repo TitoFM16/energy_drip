@@ -1,3 +1,4 @@
+import { Badge, ErrorText } from '@medical-platform/ui';
 import { useState } from 'react';
 import {
   useConsentRequestDetail,
@@ -20,10 +21,10 @@ const ELIGIBILITY_LABELS: Record<EligibilityResult, string> = {
   not_eligible: 'No elegible',
 };
 
-const ELIGIBILITY_STYLES: Record<EligibilityResult, string> = {
-  eligible: 'bg-green-50 text-green-700',
-  requires_manual_review: 'bg-amber-50 text-amber-700',
-  not_eligible: 'bg-red-50 text-red-700',
+const ELIGIBILITY_BADGE_VARIANT: Record<EligibilityResult, 'success' | 'warning' | 'danger'> = {
+  eligible: 'success',
+  requires_manual_review: 'warning',
+  not_eligible: 'danger',
 };
 
 export function ReviewSection() {
@@ -42,7 +43,7 @@ export function ReviewSection() {
       </h2>
 
       {requests.isLoading && <p className="text-slate-500">Cargando solicitudes...</p>}
-      {requests.isError && <p className="text-red-600">No se pudieron cargar las solicitudes.</p>}
+      {requests.isError && <ErrorText>No se pudieron cargar las solicitudes.</ErrorText>}
       {requests.data && requests.data.length === 0 && (
         <p className="text-slate-500">Todavía no hay solicitudes de consentimiento.</p>
       )}
@@ -66,9 +67,7 @@ export function ReviewSection() {
                     {new Date(request.created_at).toLocaleString()}
                   </p>
                 </div>
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                  {STATUS_LABELS[request.status]}
-                </span>
+                <Badge>{STATUS_LABELS[request.status]}</Badge>
               </button>
             </li>
           ))}
@@ -85,7 +84,7 @@ function RequestDetail({ requestId }: { requestId: string }) {
   const version = useConsentTemplateVersion(detail?.template_version_id ?? null);
 
   if (isLoading) return <p className="text-slate-500">Cargando detalle...</p>;
-  if (isError || !detail) return <p className="text-red-600">No se pudo cargar el detalle.</p>;
+  if (isError || !detail) return <ErrorText>No se pudo cargar el detalle.</ErrorText>;
 
   const promptByFieldKey = new Map(version.data?.questions.map((q) => [q.field_key, q.prompt]));
 
@@ -102,11 +101,12 @@ function RequestDetail({ requestId }: { requestId: string }) {
 
       {detail.submission && (
         <>
-          <span
-            className={`mb-3 inline-block rounded-full px-2.5 py-1 text-xs font-medium ${ELIGIBILITY_STYLES[detail.submission.eligibility_result]}`}
+          <Badge
+            variant={ELIGIBILITY_BADGE_VARIANT[detail.submission.eligibility_result]}
+            className="mb-3"
           >
             {ELIGIBILITY_LABELS[detail.submission.eligibility_result]}
-          </span>
+          </Badge>
           <p className="mb-3 text-xs text-slate-500">
             Enviado {new Date(detail.submission.submitted_at).toLocaleString()} ·{' '}
             {detail.submission.has_signature ? 'Firma capturada' : 'Sin firma'}

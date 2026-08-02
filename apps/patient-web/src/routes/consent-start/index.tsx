@@ -1,3 +1,4 @@
+import { Button } from '@medical-platform/ui';
 import { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useConsentFlow } from '../../features/submission/use-consent-flow';
@@ -33,13 +34,14 @@ export function ConsentStartPage() {
       <p className="text-sm text-slate-500">
         Vas a responder unas preguntas breves y firmar con tu dedo. Esto toma menos de 3 minutos.
       </p>
-      <button
+      <Button
         type="button"
+        size="lg"
+        fullWidth
         onClick={() => navigate(`/c/${token}/questionnaire`)}
-        className="rounded-lg bg-slate-900 py-4 text-base font-semibold text-white"
       >
         Comenzar
-      </button>
+      </Button>
     </div>
   );
 }

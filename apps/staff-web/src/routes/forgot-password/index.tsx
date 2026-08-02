@@ -1,3 +1,4 @@
+import { Button, Callout, ErrorText, TextField } from '@medical-platform/ui';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useRequestPasswordReset } from '../../features/auth/use-request-password-reset';
@@ -26,38 +27,29 @@ export function ForgotPasswordPage() {
               Si esa cuenta existe, te enviaremos un enlace para continuar.
             </p>
             {devToken && (
-              <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
+              <Callout variant="warning" className="text-xs">
                 Solo en desarrollo —{' '}
                 <Link to={`/reset-password/${devToken}`} className="underline">
                   continuar con el enlace de prueba
                 </Link>
-              </p>
+              </Callout>
             )}
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-              Correo electrónico
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              />
-            </label>
+            <TextField
+              label="Correo electrónico"
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
             {requestReset.isError && (
-              <p className="text-sm text-red-600">
-                No pudimos procesar la solicitud. Intenta de nuevo.
-              </p>
+              <ErrorText>No pudimos procesar la solicitud. Intenta de nuevo.</ErrorText>
             )}
-            <button
-              type="submit"
-              disabled={requestReset.isPending}
-              className="mt-2 rounded-lg bg-slate-900 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
-            >
+            <Button type="submit" disabled={requestReset.isPending} className="mt-2">
               {requestReset.isPending ? 'Enviando...' : 'Enviar enlace'}
-            </button>
+            </Button>
           </form>
         )}
         <p className="mt-6 text-center text-sm text-slate-500">

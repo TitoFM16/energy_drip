@@ -1,3 +1,4 @@
+import { Button, ErrorText, TextField } from '@medical-platform/ui';
 import { useState } from 'react';
 import { usePractitioners } from '../../features/scheduling/use-practitioners';
 import { useCreatePractitioner } from '../../features/scheduling/use-create-practitioner';
@@ -34,9 +35,7 @@ export function PractitionersSection() {
       </h2>
 
       {practitioners.isLoading && <p className="text-slate-500">Cargando profesionales...</p>}
-      {practitioners.isError && (
-        <p className="text-red-600">No se pudo cargar la lista de profesionales.</p>
-      )}
+      {practitioners.isError && <ErrorText>No se pudo cargar la lista de profesionales.</ErrorText>}
       {practitioners.data && practitioners.data.length === 0 && (
         <p className="mb-4 text-slate-500">Todavía no hay profesionales registrados.</p>
       )}
@@ -97,22 +96,15 @@ export function PractitionersSection() {
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-          Especialidad (opcional)
-          <input
-            type="text"
-            value={specialty}
-            onChange={(e) => setSpecialty(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={!userId || createPractitioner.isPending}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
-        >
+        <TextField
+          label="Especialidad (opcional)"
+          type="text"
+          value={specialty}
+          onChange={(e) => setSpecialty(e.target.value)}
+        />
+        <Button type="submit" disabled={!userId || createPractitioner.isPending}>
           {createPractitioner.isPending ? 'Agregando...' : 'Agregar profesional'}
-        </button>
+        </Button>
       </form>
       {eligibleUsers.length === 0 && users.data && users.data.length > 0 && (
         <p className="mt-2 text-sm text-slate-500">
@@ -120,7 +112,7 @@ export function PractitionersSection() {
         </p>
       )}
       {createPractitioner.isError && (
-        <p className="mt-2 text-sm text-red-600">No se pudo agregar el profesional.</p>
+        <ErrorText className="mt-2">No se pudo agregar el profesional.</ErrorText>
       )}
     </section>
   );

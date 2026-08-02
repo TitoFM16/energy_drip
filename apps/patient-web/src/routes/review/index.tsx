@@ -1,3 +1,4 @@
+import { Button, ErrorText } from '@medical-platform/ui';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useConsentFlow } from '../../features/submission/use-consent-flow';
 import { useSubmitConsent } from '../../features/submission/use-submit-consent';
@@ -41,17 +42,16 @@ export function ReviewPage() {
         <p className="mb-2 text-sm font-medium text-slate-800">Tu firma</p>
         <div className="h-24 w-full" dangerouslySetInnerHTML={{ __html: signatureSvg }} />
       </div>
-      {submitConsent.isError && (
-        <p className="text-sm text-red-600">No se pudo enviar. Intenta de nuevo.</p>
-      )}
-      <button
+      {submitConsent.isError && <ErrorText>No se pudo enviar. Intenta de nuevo.</ErrorText>}
+      <Button
         type="button"
+        size="lg"
+        fullWidth
         onClick={handleSubmit}
         disabled={submitConsent.isPending}
-        className="rounded-lg bg-slate-900 py-4 text-base font-semibold text-white disabled:opacity-40"
       >
         {submitConsent.isPending ? 'Enviando...' : 'Enviar consentimiento'}
-      </button>
+      </Button>
     </div>
   );
 }

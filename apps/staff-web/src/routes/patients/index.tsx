@@ -1,3 +1,4 @@
+import { Badge, Button, ErrorText } from '@medical-platform/ui';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { usePatients, usePatientSearch } from '../../features/patients/use-patients';
@@ -24,19 +25,15 @@ export function PatientsPage() {
           placeholder="Buscar por nombre..."
           className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
         />
-        <button
-          type="button"
-          onClick={() => setShowForm((v) => !v)}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
-        >
+        <Button type="button" onClick={() => setShowForm((v) => !v)}>
           {showForm ? 'Cancelar' : 'Nuevo paciente'}
-        </button>
+        </Button>
       </div>
 
       {showForm && <NewPatientForm onCreated={() => setShowForm(false)} />}
 
       {isLoading && <p className="text-slate-500">Cargando pacientes...</p>}
-      {isError && <p className="text-red-600">No se pudo cargar la lista de pacientes.</p>}
+      {isError && <ErrorText>No se pudo cargar la lista de pacientes.</ErrorText>}
       {data && data.length === 0 && (
         <p className="text-slate-500">
           {isSearching ? 'Sin resultados para esa búsqueda.' : 'Todavía no hay pacientes.'}
@@ -54,11 +51,7 @@ export function PatientsPage() {
               <p className="font-medium text-slate-900">
                 {patient.first_name} {patient.last_name}
               </p>
-              {!patient.is_active && (
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
-                  Inactivo
-                </span>
-              )}
+              {!patient.is_active && <Badge>Inactivo</Badge>}
             </div>
             <p className="text-sm text-slate-500">
               {patient.phone_number ?? 'Sin teléfono registrado'}

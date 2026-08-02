@@ -1,3 +1,4 @@
+import { Button, ErrorText, TextField } from '@medical-platform/ui';
 import { useState } from 'react';
 import { useCreatePatient, type PatientInput } from '../../features/patients/use-create-patient';
 
@@ -38,66 +39,18 @@ export function NewPatientForm({ onCreated }: NewPatientFormProps) {
       onSubmit={handleSubmit}
       className="mb-6 grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-2"
     >
-      <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-        Nombre
-        <input
-          type="text"
-          required
-          {...field('first_name')}
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-        Apellido
-        <input
-          type="text"
-          required
-          {...field('last_name')}
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-        Documento
-        <input
-          type="text"
-          {...field('document_id')}
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-        Fecha de nacimiento
-        <input
-          type="date"
-          {...field('date_of_birth')}
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-        Teléfono
-        <input
-          type="tel"
-          {...field('phone_number')}
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-        Correo electrónico
-        <input
-          type="email"
-          {...field('email')}
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-        />
-      </label>
+      <TextField label="Nombre" type="text" required {...field('first_name')} />
+      <TextField label="Apellido" type="text" required {...field('last_name')} />
+      <TextField label="Documento" type="text" {...field('document_id')} />
+      <TextField label="Fecha de nacimiento" type="date" {...field('date_of_birth')} />
+      <TextField label="Teléfono" type="tel" {...field('phone_number')} />
+      <TextField label="Correo electrónico" type="email" {...field('email')} />
       {createPatient.isError && (
-        <p className="text-sm text-red-600 sm:col-span-2">No se pudo crear el paciente.</p>
+        <ErrorText className="sm:col-span-2">No se pudo crear el paciente.</ErrorText>
       )}
-      <button
-        type="submit"
-        disabled={createPatient.isPending}
-        className="rounded-lg bg-slate-900 py-2.5 text-sm font-semibold text-white disabled:opacity-40 sm:col-span-2"
-      >
+      <Button type="submit" disabled={createPatient.isPending} className="sm:col-span-2">
         {createPatient.isPending ? 'Creando...' : 'Crear paciente'}
-      </button>
+      </Button>
     </form>
   );
 }
