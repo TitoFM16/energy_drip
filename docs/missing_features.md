@@ -119,6 +119,8 @@ therefore no longer tracked as wholly missing:
   development stack" in Infrastructure below) — a fresh `docker compose up`
   will hit the same 500 until bucket creation is added to the dev stack's
   startup.
+- `uv run pytest` now works from the repository root — see "Repair the root
+  Python test command" above.
 
 ## Priority levels
 
@@ -761,16 +763,20 @@ Potential acceptance criteria:
 
 ## 8. Testing and quality gates
 
-### P0: Repair the root Python test command
+### P0: Repair the root Python test command — resolved
 
-Combined `pytest` discovery currently fails because the API and worker both
-define a top-level `tests` package.
-
-Acceptance criteria:
-
-- `uv run pytest` succeeds from the repository root.
-- API and worker tests can also run independently.
-- CI uses the same supported command as local development.
+`apps/api/tests` and `apps/worker/tests` are both packages named `tests`
+(each has an `__init__.py`), which collided under pytest's default
+`prepend` import mode: whichever app's tests were collected first "won" the
+bare `tests` name in `sys.modules`, and the second app's test files 404'd
+under it (`ModuleNotFoundError: No module named 'tests.test_tasks_import'`
+when the worker's test collected after the API's). Fixed with a single
+`addopts = ["--import-mode=importlib"]` in the root `pyproject.toml`, which
+imports each test file directly instead of caching by dotted module name —
+no renaming or restructuring needed. `uv run pytest` from the repo root now
+passes all 17 tests (16 API + 1 worker); each app's tests still pass
+independently from within its own directory; CI already ran `uv run pytest`
+at the root (this fixes that job, no CI file changes needed).
 
 ### P0: Add frontend tests and repair `make test`
 
@@ -952,7 +958,9 @@ Acceptance criteria:
 
 ## Recommended delivery order
 
-1. Repair root tests and preserve green quality gates.
+1. ~~Repair root tests~~ `uv run pytest` passes from the repo root now.
+   Frontend tests (`pnpm test`/`make test`) are still broken — see "Add
+   frontend tests and repair `make test`".
 2. ~~Lock the product down to a single, operator-bootstrapped clinic~~ Done —
    see "Product scope correction". Still open from this item: seed the
    standard role catalogue and add development reference data.

@@ -51,3 +51,10 @@ indent-style = "space"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# apps/api/tests and apps/worker/tests are both packages named `tests`
+# (each has __init__.py). Default import mode inserts rootdirs onto
+# sys.path and caches modules by dotted name, so collecting both from the
+# repo root collides: whichever is imported first "wins" the `tests` name
+# and the second app's test modules 404 under it. importlib mode imports
+# each test file directly without that global name collision.
+addopts = ["--import-mode=importlib"]
