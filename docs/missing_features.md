@@ -204,11 +204,11 @@ therefore no longer tracked as wholly missing:
 - `packages/api-client`'s generated TypeScript types are now real —
   `generate:schema`/`generate:types` produce
   `generated/{openapi.json,schema.d.ts}` from the FastAPI app directly (no
-  server needs to be running), CI fails on drift in either file, and two
-  hand-typed interfaces (staff-web's `Patient`, landing's
-  `PublicTreatment`) were replaced with generated types as a proof the
-  pattern works — see "Generated TypeScript API contract" above for what's
-  done and the larger incremental cleanup still open.
+  server needs to be running), CI fails on drift in either file, and every
+  practical hand-typed response/request interface across staff-web and
+  patient-web now aliases a generated type instead of duplicating it — see
+  "Generated TypeScript API contract" above for the full list and the one
+  small backend-schema follow-up it surfaced.
 - Added [`blocked-on-owner-input.md`](blocked-on-owner-input.md): a
   standalone checklist of everything in this document that needs a
   decision, account, or review from the clinic owner rather than more
@@ -1010,12 +1010,37 @@ Fixed:
   `components` types plus a `Schemas` convenience alias
   (`Schemas['PatientRead']` instead of the more awkward
   `components['schemas']['PatientRead']`).
-- Replaced two hand-typed, manually-duplicated response interfaces with the
-  generated types as a proof the pattern works end to end: staff-web's
-  `features/patients/types.ts` (`Patient`) and landing's `reservar.tsx`
-  (`PublicTreatment`) — both now `type X = Schemas['XRead']` instead of a
-  parallel hand-maintained interface. Verified: full `pnpm turbo lint
-typecheck test build` passes across all three apps.
+- Replaced the manually-duplicated response interfaces across every
+  staff-web and patient-web `types.ts`-style file with generated types:
+  staff-web's `Patient`, `Practitioner`, `AvailableSlot`, `AppointmentStatus`,
+  `Appointment`, `ConsentQuestionOptionInput`, `ConsentQuestionInput`,
+  `ConsentTemplateVersion`, `ConsentTemplate`, `ConsentRequestStatus`,
+  `EligibilityResult`, `ConsentRequest`, `ConsentAnswer`,
+  `ConsentSubmission`, `ConsentRequestDetail`, `TokenResponse`,
+  `CurrentUser`, `TreatmentDefinition`, `TreatmentPlanStatus`,
+  `TreatmentPlan`, `TreatmentSession`, `StaffUser`; patient-web's
+  `ConsentSubmissionResult` and `ConsentSubmissionPayload`. Each is now
+  `type X = Schemas['XRead']` instead of a parallel hand-maintained
+  interface — done one at a time, comparing the generated shape against
+  the hand-typed one field-by-field first (not a blind bulk swap), and
+  checking for literal object construction of each type that could break
+  on a newly-required field. Two types were deliberately left hand-typed
+  rather than replaced: staff-web's `ConsentQuestionPublic` and
+  `ConsentTemplateVersionDetail`, and patient-web's `ConsentQuestion` (all
+  ultimately from the same backend response model) — the backend's
+  `options` field is typed as a loose `dict[str, str]` rather than a
+  structured `{value, label}` model, so the generated type for it is only
+  `{[key: string]: string}[]`, less precise than the existing hand-typed
+  version. Fixing that needs a real Pydantic sub-model on the backend
+  first, noted inline in both files as a follow-up.
+
+  Verified: `pnpm turbo lint typecheck test build` passes clean across all
+  three apps with zero errors, and live in a real browser — logged into
+  staff-web and clicked through Agenda, Pacientes, Tratamientos, and
+  Consentimientos, all rendering real data correctly with no new console
+  errors (this is a pure type-level change with no runtime logic touched,
+  so the type-check passing was the primary signal; the browser walk was
+  confirmation, not the main verification).
 
 Acceptance criteria:
 
@@ -1023,15 +1048,10 @@ Acceptance criteria:
 - ~~Provide a repeatable generation command.~~ Done (`make
 generate-api-types`).
 - ~~Fail CI when committed generated output is stale.~~ Done, see above.
-- Replace manually duplicated response interfaces where practical. Started,
-  not finished — staff-web alone has hand-typed interfaces in
-  `features/{patients,scheduling,consents,auth,treatments,users}/types.ts`
-  that duplicate API response shapes, and patient-web has its own. Only
-  replaced two as a working proof of the pattern this pass; the rest is a
-  larger, lower-risk-when-done-incrementally cleanup rather than a single
-  sweep (each replacement needs checking the generated shape actually
-  matches what the component expects — nullability/optionality can differ
-  in ways worth catching one at a time, not all at once).
+- ~~Replace manually duplicated response interfaces where practical.~~ Done
+  across staff-web and patient-web (see above). Two related types stay
+  hand-typed pending a backend schema fix (see above) — not a gap in this
+  item so much as a small follow-up it surfaced.
 - ~~Preserve public-consent and authenticated-staff client separation.~~
   Preserved by construction: this only generates _types_, not a runtime
   client. Each app still owns its own `apiFetch`/auth-handling wrapper

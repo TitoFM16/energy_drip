@@ -1,66 +1,25 @@
+import type { Schemas } from '@medical-platform/api-client';
+
 export type QuestionType = 'boolean' | 'single_choice' | 'multiple_choice' | 'text' | 'number';
 
-export interface ConsentQuestionOptionInput {
-  value: string;
-  label: string;
-}
+export type ConsentQuestionOptionInput = Schemas['ConsentQuestionOptionInput'];
+export type ConsentQuestionInput = Schemas['ConsentQuestionInput'];
+export type ConsentTemplateVersion = Schemas['ConsentTemplateVersionRead'];
+export type ConsentTemplate = Schemas['ConsentTemplateRead'];
+export type ConsentRequestStatus = Schemas['ConsentRequestStatus'];
+export type EligibilityResult = Schemas['EligibilityResult'];
+export type ConsentRequest = Schemas['ConsentRequestRead'];
+export type ConsentAnswer = Schemas['ConsentAnswerRead'];
+export type ConsentSubmission = Schemas['ConsentSubmissionRead'];
+export type ConsentRequestDetail = Schemas['ConsentRequestDetail'];
 
-export interface ConsentQuestionInput {
-  field_key: string;
-  prompt: string;
-  question_type: QuestionType;
-  display_order: number;
-  is_required: boolean;
-  options: ConsentQuestionOptionInput[];
-}
-
-export interface ConsentTemplateVersion {
-  id: string;
-  template_id: string;
-  version_number: number;
-  published_at: string | null;
-  body_markdown: string;
-}
-
-export interface ConsentTemplate {
-  id: string;
-  name: string;
-  is_active: boolean;
-  latest_version: ConsentTemplateVersion | null;
-}
-
-export type ConsentRequestStatus = 'pending' | 'completed' | 'expired' | 'invalidated';
-export type EligibilityResult = 'eligible' | 'requires_manual_review' | 'not_eligible';
-
-export interface ConsentRequest {
-  id: string;
-  patient_id: string;
-  appointment_id: string | null;
-  template_version_id: string;
-  status: ConsentRequestStatus;
-  expires_at: string;
-  created_at: string;
-}
-
-export interface ConsentAnswer {
-  question_id: string;
-  field_key: string;
-  value: unknown;
-}
-
-export interface ConsentSubmission {
-  id: string;
-  submitted_at: string;
-  timezone: string;
-  eligibility_result: EligibilityResult;
-  has_signature: boolean;
-  answers: ConsentAnswer[];
-}
-
-export interface ConsentRequestDetail extends ConsentRequest {
-  submission: ConsentSubmission | null;
-}
-
+// Not generated from Schemas: the backend's ConsentQuestionPublic response
+// model types `options` as a loose `dict[str, str]` rather than a
+// structured {value, label} model, so openapi-typescript can only infer
+// `{[key: string]: string}[]` for it — technically compatible but far
+// less useful than this hand-typed version. Worth fixing on the backend
+// (a real Pydantic sub-model for question options) so this can switch to
+// the generated type like everything else in this file did.
 export interface ConsentQuestionPublic {
   id: string;
   field_key: string;

@@ -1,6 +1,3 @@
-export interface StaffUser {
-  id: string;
-  email: string;
-  full_name: string;
-  roles: string[];
-}
+import type { Schemas } from '@medical-platform/api-client';
+
+export type StaffUser = Schemas['UserRead'];

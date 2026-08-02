@@ -75,6 +75,9 @@ importers:
 
   apps/patient-web:
     dependencies:
+      '@medical-platform/api-client':
+        specifier: workspace:*
+        version: link:../../packages/api-client
       '@tanstack/react-query':
         specifier: ^5.101.4
         version: 5.101.4(react@19.2.8)

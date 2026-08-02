@@ -1,13 +1,7 @@
-export interface TokenResponse {
-  access_token: string;
-  refresh_token: string;
-  token_type: string;
-}
+import type { Schemas } from '@medical-platform/api-client';
 
-export interface CurrentUser {
-  id: string;
-  organization_id: string;
-  email: string;
-  full_name: string;
-  roles: string[];
-}
+export type TokenResponse = Schemas['TokenResponse'];
+
+// UserRead's shape is exactly what GET /auth/me returns and this type
+// consumes — no separate CurrentUser response model exists on the backend.
+export type CurrentUser = Schemas['UserRead'];

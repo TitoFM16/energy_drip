@@ -1,3 +1,4 @@
+import type { Schemas } from '@medical-platform/api-client';
 import { useMutation } from '@tanstack/react-query';
 import { apiFetch } from '../../shared/api';
 import type { ConsentQuestion } from '../token-validation/use-consent-form';
@@ -9,16 +10,8 @@ export interface SubmitConsentInput {
   signatureSvg: string;
 }
 
-export interface ConsentSubmissionResult {
-  submission_id: string;
-  eligibility_result: 'eligible' | 'requires_manual_review' | 'not_eligible';
-}
-
-export interface ConsentSubmissionPayload {
-  answers: { question_id: string; field_key: string; value: unknown }[];
-  signature_svg: string;
-  timezone: string;
-}
+export type ConsentSubmissionResult = Schemas['ConsentSubmissionResult'];
+export type ConsentSubmissionPayload = Schemas['ConsentSubmissionCreate'];
 
 export function buildSubmissionPayload(
   questions: ConsentQuestion[],
