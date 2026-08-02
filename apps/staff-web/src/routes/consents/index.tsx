@@ -1,12 +1,13 @@
 import { PageHeading } from '../../shared/components/app-shell';
+import { ReviewSection } from './review-section';
+import { TemplatesSection } from './templates-section';
 
 export function ConsentsPage() {
   return (
     <div>
       <PageHeading>Consentimientos</PageHeading>
-      <p className="text-slate-600">
-        Enlaces de consentimiento enviados, envíos completados y documentos PDF firmados.
-      </p>
+      <TemplatesSection />
+      <ReviewSection />
     </div>
   );
 }

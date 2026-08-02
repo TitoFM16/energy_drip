@@ -4,26 +4,98 @@ from datetime import UTC, datetime, timedelta
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from medical_api.core.exceptions import ConflictError, NotFoundError
 from medical_api.integrations.object_storage.client import upload_bytes
 from medical_api.modules.consents.models import (
     ConsentAnswer,
     ConsentEvent,
+    ConsentQuestion,
+    ConsentQuestionOption,
     ConsentRequest,
     ConsentRequestStatus,
     ConsentSignature,
     ConsentSubmission,
+    ConsentTemplate,
+    ConsentTemplateVersion,
 )
-from medical_api.modules.consents.repository import ConsentRepository
+from medical_api.modules.consents.repository import ConsentRepository, ConsentTemplateRepository
 from medical_api.modules.consents.schemas import (
+    ConsentAnswerRead,
     ConsentFormRead,
     ConsentQuestionPublic,
+    ConsentRequestDetail,
     ConsentSubmissionCreate,
+    ConsentSubmissionRead,
+    ConsentTemplateCreate,
+    ConsentTemplateRead,
 )
 from medical_api.modules.notifications.service import enqueue_event
 from medical_api.shared.domain.eligibility import evaluate_rules
 from medical_api.shared.utilities.tokens import generate_opaque_token, hash_token
 
 CONSENT_LINK_TTL = timedelta(hours=48)
+
+
+class ConsentTemplateService:
+    def __init__(self, repository: ConsentTemplateRepository):
+        self.repository = repository
+
+    async def create(
+        self, organization_id: uuid.UUID, data: ConsentTemplateCreate
+    ) -> ConsentTemplateRead:
+        template = ConsentTemplate(organization_id=organization_id, name=data.name)
+        await self.repository.create_template(template)
+
+        version = ConsentTemplateVersion(
+            template_id=template.id, version_number=1, body_markdown=data.body_markdown
+        )
+        await self.repository.create_version(version)
+
+        for question_data in data.questions:
+            question = ConsentQuestion(
+                template_version_id=version.id,
+                field_key=question_data.field_key,
+                prompt=question_data.prompt,
+                question_type=question_data.question_type,
+                display_order=question_data.display_order,
+                is_required=question_data.is_required,
+            )
+            await self.repository.create_question(question)
+            for option_data in question_data.options:
+                await self.repository.create_option(
+                    ConsentQuestionOption(
+                        question_id=question.id, value=option_data.value, label=option_data.label
+                    )
+                )
+
+        return await self._to_read(template)
+
+    async def _to_read(self, template: ConsentTemplate) -> ConsentTemplateRead:
+        latest_version = await self.repository.get_latest_version(template.id)
+        return ConsentTemplateRead(
+            id=template.id,
+            name=template.name,
+            is_active=template.is_active,
+            latest_version=latest_version,
+        )
+
+    async def list_all(self, organization_id: uuid.UUID) -> list[ConsentTemplateRead]:
+        templates = await self.repository.list_templates(organization_id)
+        return [await self._to_read(t) for t in templates]
+
+    async def publish_version(
+        self, organization_id: uuid.UUID, template_id: uuid.UUID, version_id: uuid.UUID
+    ) -> ConsentTemplateVersion:
+        template = await self.repository.get_template(organization_id, template_id)
+        if template is None:
+            raise NotFoundError("ConsentTemplate", template_id)
+        version = await self.repository.get_version(version_id)
+        if version is None or version.template_id != template_id:
+            raise NotFoundError("ConsentTemplateVersion", version_id)
+        if version.published_at is not None:
+            raise ConflictError("This version is already published")
+        version.published_at = datetime.now(UTC)
+        return version
 
 
 class ConsentService:
@@ -147,3 +219,45 @@ class ConsentService:
             payload={"consent_request_id": str(request.id), "submission_id": str(submission.id)},
         )
         return submission
+
+    async def list_requests(
+        self, organization_id: uuid.UUID, patient_id: uuid.UUID | None
+    ) -> list[ConsentRequest]:
+        return await self.repository.list_requests(organization_id, patient_id)
+
+    async def get_request_detail(
+        self, organization_id: uuid.UUID, request_id: uuid.UUID
+    ) -> ConsentRequestDetail:
+        request = await self.repository.get_request(request_id)
+        if request is None or request.organization_id != organization_id:
+            raise NotFoundError("ConsentRequest", request_id)
+
+        submission_read: ConsentSubmissionRead | None = None
+        submission = await self.repository.get_submission_by_request(request.id)
+        if submission is not None:
+            answers = await self.repository.list_answers(submission.id)
+            signature = await self.repository.get_signature(submission.id)
+            submission_read = ConsentSubmissionRead(
+                id=submission.id,
+                submitted_at=submission.submitted_at,
+                timezone=submission.timezone,
+                eligibility_result=submission.eligibility_result,
+                has_signature=signature is not None,
+                answers=[
+                    ConsentAnswerRead(
+                        question_id=a.question_id, field_key=a.field_key, value=a.value.get("value")
+                    )
+                    for a in answers
+                ],
+            )
+
+        return ConsentRequestDetail(
+            id=request.id,
+            patient_id=request.patient_id,
+            appointment_id=request.appointment_id,
+            template_version_id=request.template_version_id,
+            status=request.status,
+            expires_at=request.expires_at,
+            created_at=request.created_at,
+            submission=submission_read,
+        )

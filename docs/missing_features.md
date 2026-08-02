@@ -107,6 +107,18 @@ therefore no longer tracked as wholly missing:
   detail page manages that patient's treatment plans and sessions — see
   "Treatment catalogue, plans, and session workflow" above for what's done
   and what's still open.
+- The Consents screen now authors and publishes consent templates and shows
+  a review queue with per-submission detail, and the patient detail page can
+  request a consent against a published template. See "Consent-template
+  administration and publishing" and "Consent review workspace" above for
+  what's done and what's still open. Also fixed: the local MinIO dev bucket
+  (`medical-platform`) didn't exist, so any consent submission 500'd on
+  signature upload — created via
+  `aws --endpoint-url http://localhost:9000 s3 mb s3://medical-platform`.
+  This isn't automated anywhere yet (see "Verify and harden the Docker
+  development stack" in Infrastructure below) — a fresh `docker compose up`
+  will hit the same 500 until bucket creation is added to the dev stack's
+  startup.
 
 ## Priority levels
 
@@ -306,20 +318,40 @@ Remaining acceptance criteria:
   expandable list on the detail page (e.g. progress against planned session
   count, session date timeline).
 
-### P1: Consent review workspace
+### P1: Consent review workspace — list/detail view done, rest still open
 
-The staff Consent screen needs to become an operational review queue.
+The Consents screen (`apps/staff-web/src/routes/consents/review-section.tsx`)
+now lists every consent request for the organization (patient name, status,
+created date) and, on selection, shows the submission detail: eligibility
+result badge, submitted-at timestamp, whether a signature was captured, and
+every answer matched back to its original question prompt (via the new
+staff-side `GET /api/v1/consents/templates/versions/{version_id}` endpoint,
+which works for completed requests too — unlike the public form endpoint,
+it isn't gated on the request still being pending). The patient detail page
+also got a "Solicitar consentimiento" action
+(`apps/staff-web/src/routes/patients/consent-requests-section.tsx`) that
+creates a request against a published template and surfaces the dev-mode
+link. Verified live end to end in two browsers: author a template → publish
+→ request it for a patient → open the real link
+(`http://localhost:5174/c/:token`) in patient-web → submit → see the
+eligibility result and answers in the staff review panel.
 
-Acceptance criteria:
+Remaining acceptance criteria:
 
-- List pending, expired, completed, invalidated, and failed consent requests.
-- Filter by patient, appointment, treatment, eligibility result, and date.
-- Clearly surface `requires_manual_review` and `not_eligible` results.
-- Allow authorized professionals to record a review decision and rationale.
-- Display the exact template version, questions, answers, signature, metadata,
-  and generated document.
-- Prevent the eligibility engine from being presented as an autonomous medical
-  diagnosis.
+- Filter the review list by appointment, treatment, eligibility result, or
+  date (today it's an unfiltered list of every request for the org).
+- Distinguish expired/invalidated requests visually with the same care as
+  pending/completed (the status badge exists but nothing drives those two
+  statuses yet — see the request-lifecycle gap below).
+- Allow authorized professionals to record a review decision and rationale
+  (today the workspace is read-only — there's no way to act on
+  `requires_manual_review`).
+- Display signed-document metadata and a link to the generated PDF (only
+  "firma capturada: sí/no" is shown; no document viewer).
+- Prevent the eligibility engine from being presented as an autonomous
+  medical diagnosis — the UI already labels `requires_manual_review` as
+  "Requiere revisión médica" rather than a pass/fail verdict, but this needs
+  a real design/content review, not just a first pass.
 
 ### P1: Settings administration — practitioners done, rest still a placeholder
 
@@ -366,20 +398,43 @@ Acceptance criteria:
 
 ## 3. Consent, medical filter, and signed documents
 
-### P0: Consent-template administration and publishing
+### P0: Consent-template administration and publishing — authoring/publishing done
 
-The data model supports versioned templates, questions, options, and rules, but
-there is no complete management workflow.
+There was previously no way to create a `ConsentTemplate` at all — the data
+model existed but every field had to be inserted directly into the
+database. `apps/staff-web/src/routes/consents/templates-section.tsx` now
+authors a template (name, consent text, and a dynamic question builder
+supporting all five question types, with an options editor for
+single/multiple-choice) and publishes it, calling three new backend pieces:
+`POST /api/v1/consents/templates` (creates the template + its first draft
+version + questions + options in one call), `GET /api/v1/consents/templates`
+(list with each template's latest version and publish status), and
+`POST /api/v1/consents/templates/{id}/versions/{version_id}/publish` (sets
+`published_at`; a second publish attempt on the same version correctly
+409s). Publishing is enforced as one-way — there's no unpublish or edit
+endpoint, so a published version's content is already immutable by
+construction, not just convention.
 
-Acceptance criteria:
+Remaining acceptance criteria:
 
-- Create drafts containing consent text, questions, options, and eligibility
-  rules.
-- Validate field keys, required questions, rule references, and result values.
-- Preview the exact mobile experience before publishing.
-- Publish immutable versions.
-- Never modify a version referenced by an existing consent request.
-- Retire a template without invalidating historical submissions.
+- Author eligibility rules. The authoring form has no rule builder at all —
+  every template currently publishes with zero rules, which is safe (every
+  submission falls through to `requires_manual_review`, never
+  auto-`eligible`/auto-`not_eligible`) but means the eligibility engine is
+  effectively unused until this exists.
+- Validate field keys, required questions, and rule references beyond
+  Pydantic's basic type checking (e.g. no server-side check that
+  `field_key`s are unique within a version, or that a `single_choice`
+  question actually has options).
+- Preview the exact mobile experience before publishing (no preview; staff
+  has to actually create a request and open the patient-web link to see it).
+- Create a new version of an _existing_ template after its first version is
+  published — right now, once published, a template has no way to be
+  revised; the only option is authoring an entirely new template. Given
+  immutability is enforced by never exposing an edit endpoint, this is the
+  next thing to add: `POST /templates/{id}/versions` for a new draft.
+- Retire a template (`is_active` exists on the model but nothing in the API
+  or UI sets it to `false`).
 
 ### P0: Strict submission validation
 
@@ -920,8 +975,14 @@ Acceptance criteria:
    Still open: formulas, attachments, follow-ups, linking sessions to
    appointments, and session finalization (see "Treatment catalogue, plans,
    and session workflow").
-7. Add consent-template publishing and strict submission validation.
-8. Build the staff consent-review and signed-document workflow.
+7. ~~Add consent-template publishing~~ Authoring and publishing are done.
+   Still open from this item: strict submission validation (field-key
+   uniqueness, options-required-for-choice-questions) and eligibility rule
+   authoring (see "Consent-template administration and publishing").
+8. ~~Build the staff consent-review~~ workflow. List + detail view with
+   answers matched to question prompts are done. Still open: review
+   decisions/rationale, filtering, and the signed-document viewer (see
+   "Consent review workspace").
 9. Configure private, versioned object storage and document verification.
 10. Connect real WhatsApp and SMS providers, callbacks, and reminder scheduling.
 11. Complete audit coverage and the server authorization review.

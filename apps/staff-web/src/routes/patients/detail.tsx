@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { usePatient } from '../../features/patients/use-patient';
 import { useUpdatePatient } from '../../features/patients/use-update-patient';
 import { PageHeading } from '../../shared/components/app-shell';
+import { ConsentRequestsSection } from './consent-requests-section';
 import { TreatmentPlansSection } from './treatment-plans-section';
 
 export function PatientDetailPage() {
@@ -126,6 +127,7 @@ export function PatientDetailPage() {
       </form>
 
       <TreatmentPlansSection patientId={patient.id} />
+      <ConsentRequestsSection patientId={patient.id} />
     </div>
   );
 }

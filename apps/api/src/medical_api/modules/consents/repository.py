@@ -12,8 +12,65 @@ from medical_api.modules.consents.models import (
     ConsentRule,
     ConsentSignature,
     ConsentSubmission,
+    ConsentTemplate,
     ConsentTemplateVersion,
 )
+
+
+class ConsentTemplateRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create_template(self, template: ConsentTemplate) -> ConsentTemplate:
+        self.session.add(template)
+        await self.session.flush()
+        return template
+
+    async def create_version(self, version: ConsentTemplateVersion) -> ConsentTemplateVersion:
+        self.session.add(version)
+        await self.session.flush()
+        return version
+
+    async def create_question(self, question: ConsentQuestion) -> ConsentQuestion:
+        self.session.add(question)
+        await self.session.flush()
+        return question
+
+    async def create_option(self, option: ConsentQuestionOption) -> ConsentQuestionOption:
+        self.session.add(option)
+        await self.session.flush()
+        return option
+
+    async def get_template(
+        self, organization_id: uuid.UUID, template_id: uuid.UUID
+    ) -> ConsentTemplate | None:
+        stmt = select(ConsentTemplate).where(
+            ConsentTemplate.organization_id == organization_id, ConsentTemplate.id == template_id
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def list_templates(self, organization_id: uuid.UUID) -> list[ConsentTemplate]:
+        stmt = (
+            select(ConsentTemplate)
+            .where(ConsentTemplate.organization_id == organization_id)
+            .order_by(ConsentTemplate.name)
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def get_version(self, version_id: uuid.UUID) -> ConsentTemplateVersion | None:
+        return await self.session.get(ConsentTemplateVersion, version_id)
+
+    async def list_versions(self, template_id: uuid.UUID) -> list[ConsentTemplateVersion]:
+        stmt = (
+            select(ConsentTemplateVersion)
+            .where(ConsentTemplateVersion.template_id == template_id)
+            .order_by(ConsentTemplateVersion.version_number.desc())
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def get_latest_version(self, template_id: uuid.UUID) -> ConsentTemplateVersion | None:
+        versions = await self.list_versions(template_id)
+        return versions[0] if versions else None
 
 
 class ConsentRepository:
@@ -28,6 +85,23 @@ class ConsentRepository:
         self, template_version_id: uuid.UUID
     ) -> ConsentTemplateVersion | None:
         return await self.session.get(ConsentTemplateVersion, template_version_id)
+
+    async def list_requests(
+        self, organization_id: uuid.UUID, patient_id: uuid.UUID | None = None
+    ) -> list[ConsentRequest]:
+        conditions = [ConsentRequest.organization_id == organization_id]
+        if patient_id is not None:
+            conditions.append(ConsentRequest.patient_id == patient_id)
+        stmt = select(ConsentRequest).where(*conditions).order_by(ConsentRequest.created_at.desc())
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def get_submission_by_request(
+        self, consent_request_id: uuid.UUID
+    ) -> ConsentSubmission | None:
+        stmt = select(ConsentSubmission).where(
+            ConsentSubmission.consent_request_id == consent_request_id
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
 
     async def list_questions(self, template_version_id: uuid.UUID) -> list[ConsentQuestion]:
         stmt = (
