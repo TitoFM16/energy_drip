@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { usePatient } from '../../features/patients/use-patient';
 import { useUpdatePatient } from '../../features/patients/use-update-patient';
 import { PageHeading } from '../../shared/components/app-shell';
+import { TreatmentPlansSection } from './treatment-plans-section';
 
 export function PatientDetailPage() {
   const { patientId } = useParams<{ patientId: string }>();
@@ -123,6 +124,8 @@ export function PatientDetailPage() {
           </button>
         </div>
       </form>
+
+      <TreatmentPlansSection patientId={patient.id} />
     </div>
   );
 }

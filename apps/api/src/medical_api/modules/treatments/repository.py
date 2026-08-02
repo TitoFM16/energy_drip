@@ -3,7 +3,39 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from medical_api.modules.treatments.models import TreatmentPlan, TreatmentSession
+from medical_api.modules.treatments.models import (
+    TreatmentDefinition,
+    TreatmentPlan,
+    TreatmentSession,
+)
+
+
+class TreatmentDefinitionRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create(self, definition: TreatmentDefinition) -> TreatmentDefinition:
+        self.session.add(definition)
+        await self.session.flush()
+        return definition
+
+    async def get(
+        self, organization_id: uuid.UUID, definition_id: uuid.UUID
+    ) -> TreatmentDefinition | None:
+        stmt = select(TreatmentDefinition).where(
+            TreatmentDefinition.organization_id == organization_id,
+            TreatmentDefinition.id == definition_id,
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def list_all(
+        self, organization_id: uuid.UUID, include_inactive: bool = False
+    ) -> list[TreatmentDefinition]:
+        conditions = [TreatmentDefinition.organization_id == organization_id]
+        if not include_inactive:
+            conditions.append(TreatmentDefinition.is_active.is_(True))
+        stmt = select(TreatmentDefinition).where(*conditions).order_by(TreatmentDefinition.name)
+        return list((await self.session.execute(stmt)).scalars().all())
 
 
 class TreatmentRepository:

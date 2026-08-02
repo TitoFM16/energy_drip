@@ -103,6 +103,10 @@ therefore no longer tracked as wholly missing:
 - The Patients screen now has live search, patient creation, and a detail
   page for editing name/phone/email and toggling active status — see
   "Patient management" above for what's done and what's still open.
+- The Treatments screen now manages the treatment catalogue, and the patient
+  detail page manages that patient's treatment plans and sessions — see
+  "Treatment catalogue, plans, and session workflow" above for what's done
+  and what's still open.
 
 ## Priority levels
 
@@ -265,22 +269,42 @@ Acceptance criteria:
 - Record authorship, timestamps, and finalization state are preserved.
 - Sensitive medical content is excluded from ordinary application logs.
 
-### P1: Treatment catalogue, plans, and session workflow
+### P1: Treatment catalogue, plans, and session workflow — core loop done
 
-Backend primitives exist, while the staff Treatments screen is still largely
-descriptive.
+The Treatments screen (`apps/staff-web/src/routes/treatments/`) now manages
+the treatment catalogue: list, create, and toggle active/inactive, same
+list/create/toggle pattern as the Practitioners Settings section (including
+an `include_inactive` query param on `GET /api/v1/treatments/definitions` so
+deactivated entries stay reachable). The patient detail page
+(`apps/staff-web/src/routes/patients/treatment-plans-section.tsx`) now shows
+a patient's treatment plans, creates a new plan against a catalogue entry,
+records sessions against an active plan (practitioner + clinical evolution
+note), and completes/cancels a plan. This required three backend additions
+that didn't exist before: `TreatmentDefinition` CRUD entirely (there was no
+way to create a catalogue entry at all), `GET /api/v1/treatments/plans?patient_id=`
+to list a patient's plans (the repository method existed but was never
+wired to a route), and `PATCH /api/v1/treatments/plans/{id}` to change
+status/notes. Verified live in a browser as a `practitioner`-role user:
+create a plan for a patient → record a session with clinical evolution →
+complete the plan → recording form and status buttons correctly disappear
+for a non-active plan.
 
-Acceptance criteria:
+Remaining acceptance criteria:
 
-- Manage treatment definitions and their active/inactive state.
-- Create and update patient treatment plans.
-- Schedule and record individual treatment sessions.
-- Record formulas, dosages or parameters, clinical evolution, attachments, and
-  personalized follow-ups.
-- Link appointments to plans and sessions without treating them as the same
-  entity.
-- Finalize sessions and preserve their history.
-- Provide patient-level treatment history and plan progress.
+- Record formulas, dosages or parameters — `TreatmentFormula` exists as a
+  database model with no API or UI.
+- Attachments — `Attachment` exists as a database model with no API or UI.
+- Personalized follow-ups — `Followup` exists as a database model with no
+  API or UI.
+- Link appointments to sessions (`TreatmentSessionCreate` already accepts an
+  optional `appointment_id`, but nothing in the UI sets it — sessions are
+  currently only recordable from the patient detail page, disconnected from
+  the Agenda).
+- Finalize sessions and preserve their history (sessions can be created but
+  not edited or finalized/locked).
+- Provide a dedicated patient-level treatment history view beyond the
+  expandable list on the detail page (e.g. progress against planned session
+  count, session date timeline).
 
 ### P1: Consent review workspace
 
@@ -891,7 +915,11 @@ Acceptance criteria:
    view, editing/rescheduling, and room-conflict/exception/timezone
    validation (see "Appointment
    management").
-6. Finish treatment plans, sessions, formulas, evolution, and follow-ups.
+6. ~~Finish treatment plans, sessions, formulas, evolution, and follow-ups.~~
+   Catalogue, plans, and session recording with clinical evolution are done.
+   Still open: formulas, attachments, follow-ups, linking sessions to
+   appointments, and session finalization (see "Treatment catalogue, plans,
+   and session workflow").
 7. Add consent-template publishing and strict submission validation.
 8. Build the staff consent-review and signed-document workflow.
 9. Configure private, versioned object storage and document verification.
