@@ -8,6 +8,33 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    # Postgres/Redis credentials and ports match docker-compose.yml and the
+    # app config's own defaults (core/config.py) exactly, so no DATABASE_URL/
+    # REDIS_URL env vars are needed below — same convenience the local dev
+    # setup already relies on.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: medical
+          POSTGRES_PASSWORD: medical
+          POSTGRES_DB: medical_platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U medical"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
@@ -16,6 +43,24 @@ jobs:
       - run: uv sync --all-packages
       - run: uv run ruff check .
       - run: uv run ruff format --check .
+      - name: Apply migrations
+        working-directory: apps/api
+        run: uv run --project ../.. --package medical-api alembic upgrade head
+      - name: Check for model/migration drift
+        working-directory: apps/api
+        # Fails if a model change has no corresponding migration — catches
+        # the class of bug this session hit once already (a schema change
+        # that autogenerate silently produced an empty migration for
+        # because the new module's models weren't imported into
+        # core/model_registry.py; that specific case needs the model to be
+        # importable at all, which this check can't detect on its own, but
+        # every "forgot to generate/commit a migration for a model change"
+        # case with an already-registered model is exactly what this catches).
+        run: uv run --project ../.. --package medical-api alembic check
+      # Runs against the real Postgres/Redis services above rather than
+      # skipping — DB/Redis-backed integration tests (auth flows,
+      # authorization/audit, booking rate limiting) previously only ran
+      # locally, never in CI, because this job had no database at all.
       - run: uv run pytest
 
   frontend:
@@ -28,4 +73,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo lint typecheck build
+      # `test` was missing from this list — frontend unit tests (staff-web's
+      # apiFetch, patient-web's form-validation/payload helpers, landing's
+      # booking-payload builder) never actually ran in CI before this.
+      - run: pnpm turbo lint typecheck test build

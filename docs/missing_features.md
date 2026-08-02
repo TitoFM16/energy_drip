@@ -158,6 +158,11 @@ therefore no longer tracked as wholly missing:
   against the running Docker stack with real cross-org tokens — see
   "Authorization, audit, and security" above for the full list of what's
   fixed and what's still open.
+- CI was silently not testing most of what this project already has tests
+  for: the backend job had no database (every DB-backed integration test
+  skipped on every push) and the frontend job's turbo command didn't
+  include `test` at all. Both fixed — see "CI completeness" above. Also
+  added `alembic check` as a CI step and `.github/dependabot.yml`.
 - `/reservar` is now a real public booking-request form end to end
   (public treatment listing, rate-limited and honeypot-protected booking
   submission, org-scoped staff review endpoints, audit logging) instead of
@@ -1158,12 +1163,30 @@ Remaining acceptance criteria:
   booking flow, the consent-template question builder) once a DOM testing
   stack is in place.
 
-### P1: Backend integration tests — auth tests now leave no permanent rows
+### P1: Backend integration tests — now running against real Postgres in CI
 
 Authentication now has HTTP-to-PostgreSQL integration tests for organization
-registration, refresh rotation, logout, invites, and password-reset behavior.
-They skip when no database is reachable. Availability has service-level tests
-with mocked repositories.
+registration, refresh rotation, logout, invites, and password-reset behavior,
+plus newer suites for authorization/cross-tenant isolation
+(`test_authorization_and_audit.py`) and the public booking flow
+(`test_booking.py`). They still skip when no database is reachable — but as
+of this pass, one now always is: CI's backend job (`.github/workflows/ci.yml`)
+runs real `postgres:16-alpine` and `redis:7-alpine` service containers, so
+`uv run pytest` in CI exercises these for real instead of silently skipping
+every DB-backed test on every push. Verified locally by dropping and
+recreating a genuinely empty database, running the full migration chain
+against it from scratch (`alembic upgrade head` — all 5 migrations apply
+cleanly in sequence), and running the full test suite against that fresh
+database rather than the polluted local dev one. Availability has
+service-level tests with mocked repositories.
+
+Also added: `alembic check` as a CI step, which fails the build if a model
+change has no corresponding migration. It can't catch a migration that's
+missing because a whole module's models were never imported into
+`core/model_registry.py` in the first place (nothing to diff against if
+metadata doesn't know about it) — which is the specific bug this session hit
+once with the `booking` module — but it does catch the more common case of
+an edited model with no `alembic revision --autogenerate` run for it.
 
 `test_auth_flows.py` used to commit real rows with no teardown — discovered
 while verifying `apps/api/scripts/seed_reference_data.py` (see "Reference
@@ -1191,12 +1214,18 @@ Remaining integration coverage:
 
 Acceptance criteria:
 
-- Run authentication tests against PostgreSQL in CI rather than allowing them to
-  skip.
+- ~~Run authentication tests against PostgreSQL in CI~~ Done — see above.
 - Test all repositories and both upgrade/downgrade migration paths against
-  PostgreSQL.
-- Expand authentication coverage to permissions, session revocation, abuse
-  cases, and cross-tenant isolation.
+  PostgreSQL. Upgrade path is now verified from scratch (see above);
+  `downgrade()` paths are generated but never actually exercised by anything.
+- ~~Expand authentication coverage to permissions, session revocation, abuse
+  cases, and cross-tenant isolation.~~ Permissions and cross-tenant isolation
+  are covered for patients/appointments/clinical-notes/treatments/booking-requests
+  (`test_authorization_and_audit.py`, `test_booking.py` — see "Authorization,
+  audit, and security" and "Connected public booking experience"). Session
+  revocation (refresh rotation, logout) was already covered. Still open:
+  abuse-case testing beyond the booking-request rate limiter (e.g. brute-force
+  login attempts, invite/reset-token guessing).
 - Test appointment scheduling and status history.
 - Add database-backed tests for availability rules, tenant isolation,
   practitioner conflicts, room conflicts, and timezone conversion.
@@ -1227,15 +1256,41 @@ Acceptance criteria:
 - Large PDF/signature/attachment limits.
 - Database backup restoration and object-storage recovery.
 
-### P2: CI completeness
+### P2: CI completeness — lint/format/tests/migrations/builds done, drift check and image scanning still open
+
+`.github/workflows/ci.yml` was quietly missing two things that made a lot of
+the testing work already done in this project (this session's and earlier
+ones') not actually count for anything: the backend job had no database, so
+every DB-backed integration test silently skipped on every single push; and
+the frontend job ran `pnpm turbo lint typecheck build` — no `test` — so
+staff-web/patient-web/landing's unit tests never ran in CI at all. Both
+fixed:
+
+- Backend job now runs real `postgres:16-alpine` and `redis:7-alpine` service
+  containers, applies the full migration chain (`alembic upgrade head`) to a
+  fresh database, runs `alembic check` (fails on model changes with no
+  matching migration — see "Backend integration tests" above for what it can
+  and can't catch), then runs the full test suite against that real database.
+- Frontend job now includes `test` in the turbo pipeline.
+- Added `.github/dependabot.yml` (pip, npm, docker for every app's
+  Dockerfile, and github-actions itself, all weekly) — this repo already had
+  Dependabot _alerts_ enabled at the GitHub level (visible as a warning on
+  every push) but no config for automated update PRs.
 
 Acceptance criteria:
 
-- Python lint, format, tests, and migration checks.
-- Frontend lint, type-check, tests, and builds.
-- OpenAPI-client drift check.
-- Dependency and image security scanning.
-- Required checks documented for protected branches.
+- ~~Python lint, format, tests, and migration checks.~~ Done — see above.
+- ~~Frontend lint, type-check, tests, and builds.~~ Done — see above.
+- OpenAPI-client drift check. Still open — blocked on "Generated TypeScript
+  API contract" (see "Shared packages and API contract") existing at all;
+  there's no generated client yet for anything to drift from.
+- Dependency and image security scanning. Dependency scanning via
+  Dependabot is done (see above). Image scanning (e.g. Trivy against the
+  five built Docker images) is still open.
+- Required checks documented for protected branches. Still open — this is a
+  GitHub repository setting, not a file in this repo, and changes what's
+  required to merge, so it wasn't changed without asking first. Recommended:
+  require both the `backend` and `frontend` CI jobs on the `main` branch.
 
 ## 9. Documentation
 
@@ -1418,7 +1473,18 @@ Acceptance criteria:
     fully open: production landing content/SEO and the legal/privacy
     content review, both of which need real brand content and qualified
     legal counsel rather than engineering work.
-13. Add integration and end-to-end test coverage.
+13. Add integration and end-to-end test coverage. CI now actually runs the
+    backend integration tests (real Postgres/Redis services, migration
+    chain verified from scratch, `alembic check`) and frontend unit tests
+    that already existed but were silently skipped/excluded before — see
+    "Backend integration tests" and "CI completeness". Still fully open:
+    the broader integration-coverage checklist (appointment status
+    history, availability/practitioner/room conflicts, consent
+    concurrency/immutability, outbox-transaction atomicity, PDF/document
+    tests, notification-retry idempotency), the entire "End-to-end tests"
+    item (needs a browser-automation framework decision — Playwright vs.
+    Cypress — nothing installed yet), and "Performance and resilience
+    tests" (needs real load-testing tooling and infra to test against).
 14. Complete production infrastructure, observability, backup, recovery,
     security, and compliance reviews.
 
