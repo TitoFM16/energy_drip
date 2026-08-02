@@ -5,7 +5,7 @@ import { NavBar } from './nav-bar';
 
 export function PageLayout() {
   return (
-    <div className="flex min-h-screen flex-col bg-white text-slate-900">
+    <div className="site-shell">
       <NavBar />
       <main className="flex-1">
         <Outlet />
@@ -17,9 +17,13 @@ export function PageLayout() {
 
 export function SimplePage({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="mx-auto max-w-3xl px-6 py-16">
-      <h1 className="mb-6 text-3xl font-bold text-slate-900">{title}</h1>
-      <div className="flex flex-col gap-4 text-slate-600">{children}</div>
-    </div>
+    <>
+      <header className="page-hero">
+        <p className="eyebrow">Energy Drip Medellín</p>
+        <h1>{title}</h1>
+        <span className="gold-rule" aria-hidden="true" />
+      </header>
+      <div className="simple-page">{children}</div>
+    </>
   );
 }
