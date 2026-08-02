@@ -1,5 +1,5 @@
 # See apps/api/Dockerfile for why the build context is the repo root.
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential libpq-dev curl \
