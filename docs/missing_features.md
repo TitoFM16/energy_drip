@@ -969,15 +969,41 @@ Still open from the original acceptance criteria:
   rotating IPs, and doesn't cover the public consent endpoints, which have
   the same exposure but weren't in scope here).
 
-### P2: Production landing-page content and SEO
+### P2: Production landing-page content and SEO — technical SEO complete; final content still owner-blocked
 
-Acceptance criteria:
+Technical SEO completed:
+
+- Added one centralized metadata registry for all ten public routes: home,
+  services, treatments, professionals, security/privacy, FAQ, contact,
+  booking, terms, and privacy policy. Client-side navigation now updates the
+  title, description, canonical URL, robots directive, Open Graph tags, and
+  Twitter Card tags without duplicating metadata in each page component.
+- The Vite production build now writes a route-specific HTML entry point for
+  every public route. Titles and metadata therefore exist in the initial HTML
+  returned to crawlers; they do not depend on React executing first.
+- The existing Energy Drip home-care image is reused for Open Graph and
+  Twitter previews. The home page includes JSON-LD using
+  `MedicalBusiness`/`LocalBusiness`, limited to facts already present in the
+  site: Energy Drip Medellín, Medellín/Colombia, mobile IV therapy,
+  at-home service, professional assessment, and Spanish/English service.
+- `sitemap.xml` and `robots.txt` are generated into the Vite output with all
+  canonical routes. The build validates every generated HTML file, the social
+  image, sitemap route coverage/XML envelope, and robots directives before it
+  can succeed.
+- Canonical, social, sitemap, and robots URLs use `VITE_SITE_URL`. Production
+  must set it to the real public HTTPS origin; the checked-in landing
+  `.env.example` documents this without inventing an unconfirmed domain.
+- Responsive layout review is complete for the landing routes, including the
+  uncropped hero fix across mobile, tablet, desktop, short-laptop, and
+  ultrawide viewports. Navigation remains semantic and keyboard-accessible.
+
+Still open (owner input; also tracked in `docs/blocked-on-owner-input.md`):
 
 - Final Spanish-language brand and service content.
-- Accurate professional and treatment information.
-- Page-specific titles, descriptions, canonical URLs, and social metadata.
-- Sitemap, robots policy, structured data, and accessible navigation.
-- Performance and responsive-layout review.
+- Accurate professional and treatment information, practitioner bios, and
+  approved photos/assets.
+- Final search positioning and keyword priorities (what the clinic wants to
+  rank for); the current metadata intentionally reflects only existing copy.
 - Content ownership and update process.
 
 ### P0: Legal and privacy content review
