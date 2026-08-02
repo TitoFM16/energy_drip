@@ -39,6 +39,10 @@ class UserRepository:
     async def get_by_id(self, user_id: uuid.UUID) -> User | None:
         return await self.session.get(User, user_id)
 
+    async def list_by_organization(self, organization_id: uuid.UUID) -> list[User]:
+        stmt = select(User).where(User.organization_id == organization_id).order_by(User.full_name)
+        return list((await self.session.execute(stmt)).scalars().all())
+
     async def create(self, user: User) -> User:
         self.session.add(user)
         await self.session.flush()

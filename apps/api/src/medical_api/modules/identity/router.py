@@ -107,6 +107,26 @@ async def get_me(user: AuthenticatedUser, session: DbSession) -> UserRead:
     )
 
 
+@router.get(
+    "/users",
+    response_model=list[UserRead],
+    dependencies=[Depends(require_roles("organization_admin", "medical_director"))],
+)
+async def list_users(user: AuthenticatedUser, session: DbSession) -> list[UserRead]:
+    repository = UserRepository(session)
+    users = await repository.list_by_organization(user.organization_id)
+    return [
+        UserRead(
+            id=u.id,
+            organization_id=u.organization_id,
+            email=u.email,
+            full_name=u.full_name,
+            roles=await repository.get_roles(u.id),
+        )
+        for u in users
+    ]
+
+
 @router.post(
     "/invites",
     response_model=InviteCreateResponse,

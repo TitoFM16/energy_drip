@@ -143,9 +143,11 @@ async def create_practitioner(
 
 
 @practitioners_router.get("", response_model=list[PractitionerRead])
-async def list_practitioners(user: AuthenticatedUser, session: DbSession) -> list[PractitionerRead]:
+async def list_practitioners(
+    user: AuthenticatedUser, session: DbSession, include_inactive: bool = False
+) -> list[PractitionerRead]:
     service = PractitionerService(PractitionerRepository(session), UserRepository(session))
-    return await service.list_active(user.organization_id)
+    return await service.list_active(user.organization_id, include_inactive)
 
 
 @practitioners_router.patch(

@@ -1,10 +1,11 @@
 import { PageHeading } from '../../shared/components/app-shell';
+import { PractitionersSection } from './practitioners-section';
 
 export function SettingsPage() {
   return (
     <div>
       <PageHeading>Configuración</PageHeading>
-      <p className="text-slate-600">Usuarios, roles, ubicaciones y plantillas de consentimiento.</p>
+      <PractitionersSection />
     </div>
   );
 }

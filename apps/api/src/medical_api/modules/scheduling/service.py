@@ -211,8 +211,10 @@ class PractitionerService:
         practitioner = await self.repository.create(practitioner)
         return await self._to_read(practitioner)
 
-    async def list_active(self, organization_id: uuid.UUID) -> list[PractitionerRead]:
-        practitioners = await self.repository.list_active(organization_id)
+    async def list_active(
+        self, organization_id: uuid.UUID, include_inactive: bool = False
+    ) -> list[PractitionerRead]:
+        practitioners = await self.repository.list_active(organization_id, include_inactive)
         return [await self._to_read(p) for p in practitioners]
 
     async def update(

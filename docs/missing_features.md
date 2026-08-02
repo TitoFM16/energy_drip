@@ -281,19 +281,35 @@ Acceptance criteria:
 - Prevent the eligibility engine from being presented as an autonomous medical
   diagnosis.
 
-### P1: Settings administration
+### P1: Settings administration — practitioners done, rest still a placeholder
 
-The Settings screen is currently a placeholder.
+The Settings screen (`apps/staff-web/src/routes/settings/`) now has a working
+Practitioners section: list every practitioner (including inactive ones),
+create one from an existing user, edit specialty inline, and
+toggle active/inactive. Required a new backend endpoint,
+`GET /api/v1/auth/users` (organization-scoped, admin/medical_director only),
+since there was previously no way for the frontend to know which users exist
+to attach a practitioner profile to. `GET /api/v1/practitioners` also gained
+an `include_inactive` query param — the default (`false`) preserves the
+Agenda's practitioner picker only offering bookable practitioners, while
+Settings passes `true` so a deactivated practitioner can still be found and
+reactivated instead of disappearing forever. Verified live in a browser: add
+a practitioner from an existing user → appears in Agenda's picker → toggle
+inactive → disappears from Agenda's picker but stays visible in Settings
+tagged "Inactivo — reactivar" → reactivate → reappears in Agenda.
 
-Acceptance criteria:
+Remaining acceptance criteria:
 
-- Manage users and role assignments.
-- Manage locations, rooms, practitioners, and availability rules. The
-  practitioner CRUD API now exists (`/api/v1/practitioners`) and the
-  availability-rule API already existed; neither has a Settings UI yet.
+- Manage user role assignments (users can be listed now; nothing lets an
+  admin change or add a role after invite time).
+- Manage locations, rooms, and availability rules. The availability-rule API
+  already existed; there's still no Settings UI for it (rules can only be
+  created via a raw API call, same as practitioners were before this).
 - Manage treatment catalogue entries.
 - Manage consent templates and notification configuration.
-- Restrict each section using server-enforced permissions.
+- Restrict each section using server-enforced permissions (practitioners
+  section already does — create/update require organization_admin or
+  medical_director — but this needs to hold for every future section too).
 - Audit permission and configuration changes.
 
 ### P2: Operational dashboard
@@ -850,10 +866,11 @@ Acceptance criteria:
    including the org-ID-free login screen. Still open: out-of-band token
    delivery (see "Staff authentication experience").
 4. Finish patient and medical-history management.
-5. ~~Connect the Agenda UI to the new availability APIs~~ Done — day view,
-   booking, and status changes are live. Still open from this item: the
-   Settings UI for the practitioner API, week view, editing/rescheduling, and
-   room-conflict/exception/timezone validation (see "Appointment
+5. ~~Connect the Agenda UI to the new availability APIs (and the Settings UI
+   to the new practitioner API)~~ Done — day view, booking, status changes,
+   and practitioner management are all live. Still open from this item: week
+   view, editing/rescheduling, and room-conflict/exception/timezone
+   validation (see "Appointment
    management").
 6. Finish treatment plans, sessions, formulas, evolution, and follow-ups.
 7. Add consent-template publishing and strict submission validation.

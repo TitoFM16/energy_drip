@@ -138,12 +138,11 @@ class PractitionerRepository:
         )
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
-    async def list_active(self, organization_id: uuid.UUID) -> list[Practitioner]:
-        stmt = (
-            select(Practitioner)
-            .where(
-                Practitioner.organization_id == organization_id, Practitioner.is_active.is_(True)
-            )
-            .order_by(Practitioner.created_at)
-        )
+    async def list_active(
+        self, organization_id: uuid.UUID, include_inactive: bool = False
+    ) -> list[Practitioner]:
+        conditions = [Practitioner.organization_id == organization_id]
+        if not include_inactive:
+            conditions.append(Practitioner.is_active.is_(True))
+        stmt = select(Practitioner).where(*conditions).order_by(Practitioner.created_at)
         return list((await self.session.execute(stmt)).scalars().all())
