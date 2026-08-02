@@ -122,9 +122,10 @@ therefore no longer tracked as wholly missing:
   consent submission.
 - `make seed` / `apps/api/scripts/seed_reference_data.py` provides
   idempotent demo data including a working consent eligibility rule set —
-  see "Reference and demonstration data" above (also notes a discovered
-  test-hygiene issue: the auth integration test suite pollutes the shared
-  dev database with hundreds of throwaway organizations over time).
+  see "Reference and demonstration data" above.
+- `test_auth_flows.py` no longer leaves permanent rows in the database —
+  every test now runs inside a rolled-back transaction — see "Backend
+  integration tests" above.
 
 ## Priority levels
 
@@ -206,18 +207,15 @@ production path. Also added `OrganizationRepository.get_first()`, since
 this product has exactly one organization and several call sites (this
 script included) need to resolve "the" organization without an ID.
 
-Note from verifying this: the shared local dev Postgres has accumulated
-**hundreds** of throwaway `organization`/`user` rows named "Test Clinic
-{uuid}" from running the `pytest` auth-integration suite repeatedly over
-this project's life — those tests hit a real database and never roll back
-or clean up. `get_first()` is correct for its real intended use (production
-only ever has one organization), but it means `get_first()`/the seed script
-can silently land on some ancient test-created organization instead of
-whichever one a developer has actually been using locally, if the dev DB is
-this polluted. Worth adding transactional rollback (or an explicit
-per-test-run marker + cleanup) to `apps/api/tests/test_auth_flows.py` at
-some point — tracked under "Backend integration tests" below, not fixed in
-this pass.
+Verifying this surfaced (and led directly to fixing) a real bug: the shared
+local dev Postgres had accumulated **hundreds** of throwaway
+`organization`/`user` rows named "Test Clinic {uuid}" from running the
+`pytest` auth-integration suite repeatedly, because those tests hit a real
+database and never rolled back or cleaned up — see "Backend integration
+tests" below for the fix. The existing hundreds of rows from before the fix
+are still sitting in this local dev database (harmless — see below — but
+not retroactively cleaned up by this change); a fresh database won't
+accumulate any more.
 
 Remaining acceptance criteria:
 
@@ -848,25 +846,41 @@ Remaining acceptance criteria:
   booking flow, the consent-template question builder) once a DOM testing
   stack is in place.
 
-### P1: Backend integration tests
+### P1: Backend integration tests — auth tests now leave no permanent rows
 
 Authentication now has HTTP-to-PostgreSQL integration tests for organization
 registration, refresh rotation, logout, invites, and password-reset behavior.
 They skip when no database is reachable. Availability has service-level tests
-with mocked repositories. The remaining integration coverage is:
+with mocked repositories.
+
+`test_auth_flows.py` used to commit real rows with no teardown — discovered
+while verifying `apps/api/scripts/seed_reference_data.py` (see "Reference
+and demonstration data") when hundreds of throwaway "Test Clinic"
+organizations from repeated local `pytest` runs turned up in the dev
+database. Fixed by joining each test's session into an external transaction
+that's always rolled back at teardown
+(`join_transaction_mode="create_savepoint"` — SQLAlchemy's documented
+pattern for exactly this: the route handlers' own `await session.commit()`
+calls only commit a SAVEPOINT nested inside a transaction that's never
+itself committed). The fixture is function-scoped (fresh transaction per
+test) but pinned to the module's existing session-scoped event loop via
+`pytest_asyncio.fixture(loop_scope="session")` — a plain `@pytest.fixture`
+here would put each test's connection on its own per-function loop despite
+the module-level `loop_scope="session"` marker, reintroducing the original
+cross-loop bug this module's `loop_scope` setting exists to avoid. Also had
+to match `expire_on_commit=False` from the app's real `async_session_factory`
+— without it, route handlers reading an ORM attribute right after
+`session.commit()` (e.g. `organization.id` in `register_organization`)
+triggered a sync-style lazy-reload outside the async greenlet context
+(`MissingGreenlet`). Verified: ran the file 4 times in a row and queried the
+organizations table directly — row count never changed.
+
+Remaining integration coverage:
 
 Acceptance criteria:
 
 - Run authentication tests against PostgreSQL in CI rather than allowing them to
   skip.
-- Wrap `test_auth_flows.py` in a transaction that rolls back per test (or
-  otherwise clean up what it creates). It hits a real database and commits
-  real rows with no teardown; run against a long-lived local dev database
-  enough times and it silently accumulates hundreds of throwaway
-  organizations and users, which then confuses anything that assumes "the"
-  single organization is the one a developer is actually using (discovered
-  while verifying `apps/api/scripts/seed_reference_data.py` — see
-  "Reference and demonstration data").
 - Test all repositories and both upgrade/downgrade migration paths against
   PostgreSQL.
 - Expand authentication coverage to permissions, session revocation, abuse

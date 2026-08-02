@@ -11,29 +11,85 @@ whose pooled asyncpg connections bind to whichever event loop first used
 them. pytest-asyncio's default is a fresh loop per test function, so a
 connection checked back into the pool by one test and handed to the next
 raises "Event loop is closed". Pinning this whole module to one shared
-session-scoped loop (and a matching session-scoped client) avoids that
-entirely — it's what the engine's actual lifetime already assumes.
+session-scoped loop avoids that — it's what the engine's actual lifetime
+already assumes.
+
+The `client` fixture below is still function-scoped (a fresh one per test),
+but every test's connection and transaction come from that one shared loop,
+so there's no cross-loop handoff. Each test's connection is wrapped in an
+outer transaction that's rolled back at teardown — before this, these tests
+committed real organizations/users to whatever database DATABASE_URL
+pointed at with no cleanup, and a long-lived local dev database ends up
+with hundreds of throwaway "Test Clinic" rows after enough `pytest` runs
+(see "Reference and demonstration data" in docs/missing_features.md, which
+is where this was actually discovered).
 """
 
 import uuid
 
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from medical_api.core.config import get_settings
+from medical_api.core.database import engine, get_db
 from medical_api.main import app
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
-@pytest.fixture(scope="session")
+@pytest_asyncio.fixture(loop_scope="session")
 async def client():
+    """Fixture *scope* is function (a fresh transaction per test) but *loop
+    scope* is session — matching pytestmark above — so every test's
+    connection is opened and closed on the one shared loop this whole
+    module already assumes; a plain `@pytest.fixture` here would run each
+    test's fixture setup on its own per-function loop regardless of the
+    module-level marker, reintroducing the cross-loop bug this module
+    exists to avoid.
+
+    Joins the session into an external transaction that's always rolled
+    back, per SQLAlchemy's documented pattern for test suites: the route
+    handlers' own `await session.commit()` calls only commit a SAVEPOINT
+    nested inside this outer, never-committed transaction
+    (`join_transaction_mode="create_savepoint"`), so nothing a test does is
+    ever actually persisted once its connection is closed below.
+    """
+    connection = await engine.connect()
+    outer_transaction = await connection.begin()
+    # expire_on_commit=False matches the app's real async_session_factory
+    # (core/database.py) — route handlers read ORM attributes right after
+    # `await session.commit()` (e.g. `organization.id` in
+    # register_organization), which needs the object's attributes to still
+    # be loaded rather than expired-and-needing-a-sync-style-reload.
+    session = AsyncSession(
+        bind=connection, join_transaction_mode="create_savepoint", expire_on_commit=False
+    )
+
+    async def override_get_db():
+        try:
+            yield session
+        except Exception:
+            # Mirrors the real get_db's implicit rollback-on-exception
+            # (AsyncSession.close() does this too) so a request that fails
+            # mid-handler doesn't leave the savepoint in a state that
+            # poisons whatever the test does next.
+            await session.rollback()
+            raise
+
+    app.dependency_overrides[get_db] = override_get_db
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
+    finally:
+        del app.dependency_overrides[get_db]
+        await session.close()
+        await outer_transaction.rollback()
+        await connection.close()
 
 
 async def _db_reachable() -> bool:
