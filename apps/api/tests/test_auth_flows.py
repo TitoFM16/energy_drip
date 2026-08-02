@@ -163,11 +163,41 @@ async def test_invite_requires_organization_admin_role(client):
     assert forbidden.status_code == 403
 
 
-async def test_password_reset_flow(client):
+async def test_login_resolves_the_single_organization_without_an_org_id(client):
+    # register-organization's response doesn't echo the admin email/password
+    # back, so accept an invite to get a known email/password pair to log in
+    # with.
     org = await _register_org(client)
+    invite_email = f"login-check-{uuid.uuid4()}@example.com"
+    invite = await client.post(
+        "/api/v1/auth/invites",
+        json={"email": invite_email, "role": "receptionist"},
+        headers={"Authorization": f"Bearer {org['access_token']}"},
+    )
+    accept = await client.post(
+        f"/api/v1/auth/invites/{invite.json()['token']}/accept",
+        json={"full_name": "Login Check", "password": "checklogin123"},
+    )
+    assert accept.status_code == 201, accept.text
+
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": invite_email, "password": "checklogin123"},
+    )
+    assert login.status_code == 200, login.text
+    assert login.json()["access_token"]
+
+    wrong_password = await client.post(
+        "/api/v1/auth/login",
+        json={"email": invite_email, "password": "not-the-password"},
+    )
+    assert wrong_password.status_code == 401
+
+
+async def test_password_reset_flow(client):
     reset_request = await client.post(
         "/api/v1/auth/password-reset/request",
-        json={"organization_id": org["organization_id"], "email": "admin@nonexistent.example.com"},
+        json={"email": "admin@nonexistent.example.com"},
     )
     # Same 200 shape whether or not the account exists — token is only
     # populated for a real account (see PasswordResetRequestResponse).

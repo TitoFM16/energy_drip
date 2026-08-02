@@ -6,6 +6,7 @@ from medical_api.api.v1 import (
     consents,
     notifications,
     patients,
+    practitioners,
     public,
     treatments,
 )
@@ -17,6 +18,7 @@ api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(patients.patients_router, prefix="/patients", tags=["patients"])
 api_router.include_router(patients.clinical_router, prefix="/patients", tags=["clinical-records"])
 api_router.include_router(appointments.router, prefix="/appointments", tags=["appointments"])
+api_router.include_router(practitioners.router, prefix="/practitioners", tags=["practitioners"])
 api_router.include_router(treatments.router, prefix="/treatments", tags=["treatments"])
 api_router.include_router(consents.router, prefix="/consents", tags=["consents"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])

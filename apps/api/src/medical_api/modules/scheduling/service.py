@@ -4,18 +4,26 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from medical_api.core.exceptions import ConflictError, NotFoundError
+from medical_api.modules.identity.repository import UserRepository
 from medical_api.modules.notifications.service import enqueue_event
 from medical_api.modules.scheduling.models import (
     Appointment,
     AppointmentStatus,
     AppointmentStatusHistory,
     AvailabilityRule,
+    Practitioner,
 )
-from medical_api.modules.scheduling.repository import AppointmentRepository, AvailabilityRepository
+from medical_api.modules.scheduling.repository import (
+    AppointmentRepository,
+    AvailabilityRepository,
+    PractitionerRepository,
+)
 from medical_api.modules.scheduling.schemas import (
     AppointmentCreate,
     AvailabilityRuleCreate,
     AvailableSlot,
+    PractitionerCreate,
+    PractitionerUpdate,
 )
 
 MAX_AVAILABILITY_WINDOW_DAYS = 31
@@ -164,3 +172,32 @@ def _overlaps_any(
     return any(
         starts_at < busy_end and ends_at > busy_start for busy_start, busy_end in busy_periods
     )
+
+
+class PractitionerService:
+    def __init__(self, repository: PractitionerRepository, users: UserRepository):
+        self.repository = repository
+        self.users = users
+
+    async def create(self, organization_id: uuid.UUID, data: PractitionerCreate) -> Practitioner:
+        user = await self.users.get_by_id(data.user_id)
+        if user is None or user.organization_id != organization_id:
+            raise NotFoundError("User", data.user_id)
+        if await self.repository.get_by_user_id(organization_id, data.user_id) is not None:
+            raise ConflictError("This user already has a practitioner profile")
+
+        practitioner = Practitioner(organization_id=organization_id, **data.model_dump())
+        return await self.repository.create(practitioner)
+
+    async def list_active(self, organization_id: uuid.UUID) -> list[Practitioner]:
+        return await self.repository.list_active(organization_id)
+
+    async def update(
+        self, organization_id: uuid.UUID, practitioner_id: uuid.UUID, data: PractitionerUpdate
+    ) -> Practitioner:
+        practitioner = await self.repository.get(organization_id, practitioner_id)
+        if practitioner is None:
+            raise NotFoundError("Practitioner", practitioner_id)
+        for field, value in data.model_dump(exclude_unset=True).items():
+            setattr(practitioner, field, value)
+        return practitioner

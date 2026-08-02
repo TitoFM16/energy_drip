@@ -9,6 +9,7 @@ from medical_api.modules.scheduling.models import (
     AppointmentStatus,
     AppointmentStatusHistory,
     AvailabilityRule,
+    Practitioner,
 )
 
 _INACTIVE_STATUSES = (AppointmentStatus.CANCELLED, AppointmentStatus.NO_SHOW)
@@ -110,3 +111,39 @@ class AvailabilityRepository:
     async def delete_rule(self, rule: AvailabilityRule) -> None:
         await self.session.delete(rule)
         await self.session.flush()
+
+
+class PractitionerRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create(self, practitioner: Practitioner) -> Practitioner:
+        self.session.add(practitioner)
+        await self.session.flush()
+        return practitioner
+
+    async def get(
+        self, organization_id: uuid.UUID, practitioner_id: uuid.UUID
+    ) -> Practitioner | None:
+        stmt = select(Practitioner).where(
+            Practitioner.organization_id == organization_id, Practitioner.id == practitioner_id
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def get_by_user_id(
+        self, organization_id: uuid.UUID, user_id: uuid.UUID
+    ) -> Practitioner | None:
+        stmt = select(Practitioner).where(
+            Practitioner.organization_id == organization_id, Practitioner.user_id == user_id
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def list_active(self, organization_id: uuid.UUID) -> list[Practitioner]:
+        stmt = (
+            select(Practitioner)
+            .where(
+                Practitioner.organization_id == organization_id, Practitioner.is_active.is_(True)
+            )
+            .order_by(Practitioner.created_at)
+        )
+        return list((await self.session.execute(stmt)).scalars().all())

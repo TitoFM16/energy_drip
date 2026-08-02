@@ -64,7 +64,6 @@ class InviteAcceptRequest(BaseModel):
 
 
 class PasswordResetRequest(BaseModel):
-    organization_id: uuid.UUID
     email: EmailStr
 
 

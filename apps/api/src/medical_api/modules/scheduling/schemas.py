@@ -67,3 +67,23 @@ class AvailabilityRuleRead(BaseModel):
 class AvailableSlot(BaseModel):
     starts_at: datetime
     ends_at: datetime
+
+
+class PractitionerCreate(BaseModel):
+    user_id: uuid.UUID
+    specialty: str | None = None
+
+
+class PractitionerUpdate(BaseModel):
+    specialty: str | None = None
+    is_active: bool | None = None
+
+
+class PractitionerRead(BaseModel):
+    id: uuid.UUID
+    organization_id: uuid.UUID
+    user_id: uuid.UUID
+    specialty: str | None
+    is_active: bool
+
+    model_config = {"from_attributes": True}

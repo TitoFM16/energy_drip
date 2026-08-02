@@ -5,7 +5,12 @@ from fastapi import APIRouter, Depends
 
 from medical_api.api.dependencies import AuthenticatedUser, DbSession
 from medical_api.core.security import require_roles
-from medical_api.modules.scheduling.repository import AppointmentRepository, AvailabilityRepository
+from medical_api.modules.identity.repository import UserRepository
+from medical_api.modules.scheduling.repository import (
+    AppointmentRepository,
+    AvailabilityRepository,
+    PractitionerRepository,
+)
 from medical_api.modules.scheduling.schemas import (
     AppointmentCreate,
     AppointmentRead,
@@ -13,10 +18,22 @@ from medical_api.modules.scheduling.schemas import (
     AvailabilityRuleCreate,
     AvailabilityRuleRead,
     AvailableSlot,
+    PractitionerCreate,
+    PractitionerRead,
+    PractitionerUpdate,
 )
-from medical_api.modules.scheduling.service import AppointmentService, AvailabilityService
+from medical_api.modules.scheduling.service import (
+    AppointmentService,
+    AvailabilityService,
+    PractitionerService,
+)
 
+# Mounted at /api/v1/appointments (this router) and /api/v1/practitioners
+# (practitioners_router) — practitioners live in the scheduling module
+# because that's where their only current use (availability/booking) is,
+# but they're not sub-resources of appointments.
 router = APIRouter()
+practitioners_router = APIRouter()
 
 
 @router.get("", response_model=list[AppointmentRead])
@@ -108,3 +125,41 @@ async def delete_availability_rule(
     service = AvailabilityService(AvailabilityRepository(session), AppointmentRepository(session))
     await service.delete_rule(user.organization_id, rule_id)
     await session.commit()
+
+
+@practitioners_router.post(
+    "",
+    response_model=PractitionerRead,
+    status_code=201,
+    dependencies=[Depends(require_roles("organization_admin", "medical_director"))],
+)
+async def create_practitioner(
+    payload: PractitionerCreate, user: AuthenticatedUser, session: DbSession
+) -> PractitionerRead:
+    service = PractitionerService(PractitionerRepository(session), UserRepository(session))
+    practitioner = await service.create(user.organization_id, payload)
+    await session.commit()
+    return practitioner
+
+
+@practitioners_router.get("", response_model=list[PractitionerRead])
+async def list_practitioners(user: AuthenticatedUser, session: DbSession) -> list[PractitionerRead]:
+    service = PractitionerService(PractitionerRepository(session), UserRepository(session))
+    return await service.list_active(user.organization_id)
+
+
+@practitioners_router.patch(
+    "/{practitioner_id}",
+    response_model=PractitionerRead,
+    dependencies=[Depends(require_roles("organization_admin", "medical_director"))],
+)
+async def update_practitioner(
+    practitioner_id: uuid.UUID,
+    payload: PractitionerUpdate,
+    user: AuthenticatedUser,
+    session: DbSession,
+) -> PractitionerRead:
+    service = PractitionerService(PractitionerRepository(session), UserRepository(session))
+    practitioner = await service.update(user.organization_id, practitioner_id, payload)
+    await session.commit()
+    return practitioner

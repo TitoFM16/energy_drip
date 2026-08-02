@@ -62,6 +62,15 @@ class AuthService:
     async def register_organization(
         self, data: RegisterOrganizationRequest
     ) -> tuple[Organization, TokenResponse]:
+        """One-time bootstrap for this product's single clinic.
+
+        This product is single-tenant: there is exactly one organization,
+        ever. In production this endpoint must never be reachable at all
+        (see the router's environment gate) — a production deployment is
+        bootstrapped once via an operator-run seed command, not this public
+        HTTP call. It stays open in non-production environments purely so
+        local dev and the test suite can create disposable clinics.
+        """
         organization = Organization(name=data.organization_name)
         self.session.add(organization)
         await self.session.flush()
@@ -79,8 +88,8 @@ class AuthService:
         tokens = await self._issue_tokens(user)
         return organization, tokens
 
-    async def login(self, organization_id: uuid.UUID, email: str, password: str) -> TokenResponse:
-        user = await self.users.get_by_email(organization_id, email)
+    async def login(self, email: str, password: str) -> TokenResponse:
+        user = await self.users.get_by_email_any_org(email)
         if (
             user is None
             or not user.is_active
@@ -146,13 +155,13 @@ class AuthService:
 
         return await self._issue_tokens(user)
 
-    async def request_password_reset(self, organization_id: uuid.UUID, email: str) -> str | None:
+    async def request_password_reset(self, email: str) -> str | None:
         """Returns the raw reset token if an active account exists, else
         None. Callers must respond with the same status/shape either way
         (only whether `token` is populated differs) so the endpoint doesn't
         leak account existence.
         """
-        user = await self.users.get_by_email(organization_id, email)
+        user = await self.users.get_by_email_any_org(email)
         if user is None or not user.is_active:
             return None
         raw_token, token_hash = generate_opaque_token()

@@ -23,6 +23,19 @@ class UserRepository:
         stmt = select(User).where(User.organization_id == organization_id, User.email == email)
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
+    async def get_by_email_any_org(self, email: str) -> User | None:
+        """Looks up a user by email without scoping to an organization.
+
+        This product has exactly one clinic, so staff never know or need to
+        supply an organization ID to log in — this is what lets the login
+        and password-reset screens ask for email alone. `.limit(1)` is a
+        safety net, not a real disambiguation strategy: correctness still
+        relies on `uq_users_org_email` plus there only ever being one
+        organization in a deployment of this product.
+        """
+        stmt = select(User).where(User.email == email).limit(1)
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
     async def get_by_id(self, user_id: uuid.UUID) -> User | None:
         return await self.session.get(User, user_id)
 

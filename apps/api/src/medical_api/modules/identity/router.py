@@ -1,9 +1,8 @@
-import uuid
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from medical_api.api.dependencies import AuthenticatedUser, DbSession
+from medical_api.core.config import get_settings
 from medical_api.core.security import require_roles
 from medical_api.modules.identity.repository import (
     InviteRepository,
@@ -29,6 +28,7 @@ from medical_api.modules.identity.schemas import (
 from medical_api.modules.identity.service import AuthService
 
 router = APIRouter()
+settings = get_settings()
 
 
 def _build_service(session: AsyncSession) -> AuthService:
@@ -45,10 +45,23 @@ def _build_service(session: AsyncSession) -> AuthService:
 async def register_organization(
     payload: RegisterOrganizationRequest, session: DbSession
 ) -> RegisterOrganizationResponse:
-    """Bootstraps a new clinic: creates the organization and its first
-    organization_admin user in one call. Every subsequent user is created
-    via an invite (see /invites) so it always has an inviting admin.
+    """One-time bootstrap for this product's single clinic: creates the
+    organization and its first organization_admin user together. Every
+    subsequent user is created via an invite (see /invites) so it always has
+    an inviting admin.
+
+    This product is single-tenant — there is exactly one clinic, ever — so
+    this route must never be reachable in production; a production
+    deployment is bootstrapped once via an operator-run seed command
+    instead. It stays available in non-production environments so local dev
+    and the test suite can create disposable clinics.
     """
+    if settings.is_production:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Public organization registration is disabled in production. "
+            "Bootstrap the clinic with the operator seed command instead.",
+        )
     service = _build_service(session)
     organization, tokens = await service.register_organization(payload)
     await session.commit()
@@ -56,11 +69,9 @@ async def register_organization(
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(
-    payload: LoginRequest, organization_id: uuid.UUID, session: DbSession
-) -> TokenResponse:
+async def login(payload: LoginRequest, session: DbSession) -> TokenResponse:
     service = _build_service(session)
-    tokens = await service.login(organization_id, payload.email, payload.password)
+    tokens = await service.login(payload.email, payload.password)
     await session.commit()
     return tokens
 
@@ -128,7 +139,7 @@ async def request_password_reset(
     payload: PasswordResetRequest, session: DbSession
 ) -> PasswordResetRequestResponse:
     service = _build_service(session)
-    raw_token = await service.request_password_reset(payload.organization_id, payload.email)
+    raw_token = await service.request_password_reset(payload.email)
     await session.commit()
     # Same response shape regardless of whether the account exists — only
     # `token` differs, and that field is dev-mode only (see schema note).
