@@ -1,13 +1,16 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from medical_api.api.error_handlers import register_error_handlers
 from medical_api.api.router import api_router
 from medical_api.core.config import get_settings
+from medical_api.core.database import engine
 from medical_api.core.logging import configure_logging
 from medical_api.core.middleware import RequestContextMiddleware
+from medical_api.core.rate_limit import get_redis
+from medical_api.core.schema_check import assert_schema_matches_head
 from medical_api.integrations.object_storage.client import ensure_bucket_exists
 
 settings = get_settings()
@@ -16,6 +19,12 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     configure_logging()
+    # Runs in every environment, not just production: a worker or a
+    # differently-started API instance running old code against a newer
+    # schema (or vice versa) is exactly as possible in local dev as in
+    # production, and failing loudly at startup beats a confusing runtime
+    # error from the first request that touches the mismatched table/column.
+    await assert_schema_matches_head(engine)
     if not settings.is_production:
         # Dev/test convenience: the local MinIO bucket doesn't exist until
         # something creates it, and nothing in the Docker stack did — the
@@ -45,4 +54,38 @@ app.include_router(api_router)
 
 @app.get("/health", tags=["health"])
 async def health_check() -> dict[str, str]:
+    """Pure liveness — the process is up and able to handle a request.
+    Deliberately checks nothing else: an orchestrator using this to decide
+    whether to kill/restart the process shouldn't restart a perfectly
+    healthy API just because a downstream dependency is briefly down (that
+    would compound an outage, not fix it). See /health/ready for the
+    dependency-aware check.
+    """
     return {"status": "ok"}
+
+
+@app.get("/health/ready", tags=["health"])
+async def readiness_check(response: Response) -> dict[str, str]:
+    """Dependency-aware readiness — for load balancer / orchestrator
+    routing decisions ("should traffic go to this instance right now"),
+    not for triggering restarts. Checks the two hard dependencies every
+    request potentially needs: Postgres and Redis (the latter for
+    rate-limiting the public booking endpoint).
+    """
+    checks = {}
+    try:
+        async with engine.connect() as connection:
+            await connection.exec_driver_sql("SELECT 1")
+        checks["database"] = "ok"
+    except Exception as exc:
+        checks["database"] = f"error: {exc}"
+
+    try:
+        await get_redis().ping()
+        checks["redis"] = "ok"
+    except Exception as exc:
+        checks["redis"] = f"error: {exc}"
+
+    if any(v != "ok" for v in checks.values()):
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    return checks

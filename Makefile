@@ -1,4 +1,4 @@
-.PHONY: install dev dev-local up down api worker migrate migrate-new seed test lint format
+.PHONY: install dev dev-local up down api worker migrate migrate-new seed test lint format backup-db restore-db
 
 install:
 	pnpm install
@@ -39,6 +39,14 @@ migrate-new:
 # be bootstrapped (see apps/api/scripts/bootstrap_clinic.py).
 seed:
 	cd apps/api && uv run --package medical-api python scripts/seed_reference_data.py
+
+# Local dev backup/restore verification — see docs/backup-and-recovery.md.
+# Not a production backup strategy.
+backup-db:
+	./scripts/backup_local_db.sh
+
+restore-db:
+	./scripts/restore_local_db.sh $(file) $(db)
 
 test:
 	pnpm turbo test

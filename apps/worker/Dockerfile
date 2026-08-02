@@ -15,6 +15,14 @@ COPY apps/api ./apps/api
 COPY apps/worker ./apps/worker
 
 RUN uv sync --package medical-worker --frozen
+# dramatiq's --processes launches multiple OS processes that each
+# independently `import medical_worker.tasks` at near-identical moments.
+# If bytecode hasn't been compiled yet, several processes race to write
+# the same __pycache__/*.pyc file and can corrupt it for whoever reads it
+# next (`EOFError: marshal data too short` — a known CPython multiprocess
+# hazard, not specific to this codebase). Precompiling here means every
+# process finds an already-valid .pyc and never writes one at runtime.
+RUN uv run --project /workspace --package medical-worker python -m compileall -q /workspace
 
 WORKDIR /workspace/apps/worker
 

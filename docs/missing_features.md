@@ -158,6 +158,31 @@ therefore no longer tracked as wholly missing:
   against the running Docker stack with real cross-org tokens — see
   "Authorization, audit, and security" above for the full list of what's
   fixed and what's still open.
+- Observability: requests are now correlated end-to-end through structured
+  logs via a `request_id` bound into structlog contextvars; the worker
+  processes now emit the same JSON log format as the API instead of a
+  different console format (they never called `configure_logging()`
+  before); the outbox consumer and scheduler now log periodic
+  heartbeats/ticks instead of only logging once at startup; and the API
+  has a real `/health/ready` dependency check (Postgres + Redis) alongside
+  the existing pure-liveness `/health`. See "Observability" above for what
+  still needs a monitoring-backend decision (metrics, tracing, alerts).
+- Added a startup schema-version guard (`core/schema_check.py`, called
+  from the API's lifespan and both worker entry points) that refuses to
+  start a process whose database schema doesn't match what its own
+  bundled migrations expect, rather than failing confusingly on the first
+  query that touches a missing/changed column. Finding and fixing this
+  surfaced a real, unrelated bug: dramatiq's multi-process worker startup
+  had a latent bytecode-cache race (`EOFError: marshal data too short`)
+  that the schema check's extra imports made likely enough to actually hit
+  — fixed by precompiling bytecode at Docker image build time. See
+  "Migration and release discipline" above.
+- Added a verified local Postgres backup/restore drill
+  (`scripts/backup_local_db.sh` / `restore_local_db.sh`,
+  `make backup-db`/`restore-db`) and
+  [`docs/backup-and-recovery.md`](backup-and-recovery.md) documenting what
+  needs backing up and what's still blocked on choosing a hosting/managed-
+  Postgres provider. See "Backup, recovery, and retention" above.
 - CI was silently not testing most of what this project already has tests
   for: the backend job had no database (every DB-backed integration test
   skipped on every push) and the frontend job's turbo command didn't
@@ -1365,12 +1390,35 @@ Remaining acceptance criteria:
 - Fresh checkout can build and start every service (not verified end-to-end
   from a truly clean checkout this session — only individual container
   restarts against already-provisioned volumes).
-- Migrations run exactly once and failures are visible.
-- API, worker, queue, and frontend health checks are available.
+- ~~Migrations run exactly once and failures are visible.~~ Done —
+  `apps/api/docker-entrypoint.sh` already ran `alembic upgrade head` (with
+  `set -e`, so a failure stops the container rather than starting against
+  a half-migrated schema) before every API start; this was true before
+  this session but undocumented. Also now backstopped by the schema-version
+  guard below, which catches the case this alone doesn't: a _second_
+  process (the worker) running old code against a schema a newer API
+  instance already migrated forward.
+- ~~API, worker, queue, and frontend health checks are available.~~ API has
+  `/health` (liveness) and the new `/health/ready` (readiness — checks
+  Postgres and Redis, see "Observability"). Worker/queue and the three
+  frontend apps still have none — they're not HTTP servers, so "health
+  check" for them means something different (a heartbeat/liveness signal a
+  process supervisor can watch); see "Observability" for what exists there
+  today (structured heartbeat logs) versus a real check.
 - Development credentials are clearly marked and cannot be reused in
-  production.
+  production. Still open — `docker-compose.yml`'s hardcoded
+  `medical`/`medical123` etc. are obviously dev-only by inspection, but
+  nothing enforces they can't end up in a production config by copy-paste.
 
-### P1: Production deployment infrastructure
+### P1: Production deployment infrastructure — not started, needs a hosting decision
+
+Nothing in this section was touched. Every acceptance criterion below
+depends on picking an actual hosting target (a cloud provider, a PaaS like
+Fly.io/Render, a single VPS, etc.) and a managed Postgres provider — that's
+a real infrastructure/cost decision for the clinic owner, not something to
+guess at and build speculative Terraform/IaC for. Flagging this explicitly
+rather than silently skipping it: **this is the one piece of item 14 that's
+blocked on your input, not on more engineering time.**
 
 Acceptance criteria:
 
@@ -1382,37 +1430,144 @@ Acceptance criteria:
 - Environment-specific configuration and secret management.
 - Zero- or low-downtime migration and rollback strategy.
 
-### P1: Observability
+### P1: Observability — structured/correlated logging and readiness checks done, metrics/tracing/alerting still need a monitoring backend
+
+What's built, all independent of any hosting decision:
+
+- **Request correlation**: `RequestContextMiddleware`
+  (`apps/api/src/medical_api/core/middleware.py`) now binds `request_id`
+  into `structlog.contextvars` for the duration of every request, so
+  _every_ log line anywhere in that request's call stack — router,
+  service, repository, any depth — automatically carries the same
+  `request_id` with no per-call-site plumbing. Verified directly: bound a
+  request_id, logged, confirmed it appeared; cleared it, logged again,
+  confirmed it was gone (no leakage across requests).
+- **Consistent structured logging across processes**: the worker processes
+  (`medical_worker.main` and the dramatiq CLI's `medical_worker.tasks`)
+  never called `configure_logging()` — their logs were structlog's default
+  console renderer, a different format from the API's JSON logs, making
+  the two impossible to parse/correlate consistently. Both now call it.
+  Verified live: worker container logs are now genuine JSON
+  (`{"event": "outbox_consumer.started", ...}`) instead of
+  `2026-08-02 18:43:20 [info     ] outbox_consumer.started ...`.
+- **Worker liveness signal**: the outbox consumer previously only logged
+  once, at startup — no way to tell "healthy and idle" from "silently
+  stuck" without external verification. It now logs a heartbeat every
+  ~5 minutes with the current backlog size
+  (`outbox_consumer.heartbeat backlog=N`). The scheduler's reminder/missed-
+  appointment loops now log each successful tick (they already run every 5
+  minutes, so one line per tick doesn't need its own throttling).
+- **Readiness endpoint**: `GET /health/ready` checks Postgres and Redis
+  connectivity, returns 503 if either is down; `GET /health` stays a pure
+  liveness check (no dependency checks — an orchestrator using it to
+  decide whether to _restart_ the process shouldn't kill a healthy API
+  just because Redis is briefly down, that compounds an outage). Verified
+  live: both return 200 with `{"database": "ok", "redis": "ok"}` against
+  the running stack.
 
 Acceptance criteria:
 
-- Correlated structured logs without medical content.
+- ~~Correlated structured logs without medical content.~~ Correlation is
+  done (see above). "Without medical content" wasn't specifically
+  re-audited this pass — worth a grep through `logger.*(...)` calls for
+  anything that might pass raw clinical-note/consent-answer content before
+  trusting this fully.
 - Metrics for API latency/errors, database health, queue depth, outbox age,
-  worker failures, notification delivery, and PDF generation.
-- Distributed tracing or request correlation across API and worker.
-- Alerts with documented operator actions.
-- Health and readiness endpoints for deployable processes.
+  worker failures, notification delivery, and PDF generation. Still open —
+  needs a metrics library (e.g. `prometheus-client`) _and_ a real backend
+  to scrape/store/graph it (Prometheus+Grafana, Datadog, CloudWatch, etc.).
+  Bundling this with the hosting decision above rather than half-building
+  a `/metrics` endpoint nobody's monitoring yet.
+- ~~Distributed tracing or request correlation across API and worker.~~ The
+  "or" is doing the work here — request correlation (above) is the
+  lighter-weight option this implements. True distributed tracing spanning
+  the outbox → worker → dramatiq actor chain would need OpenTelemetry plus
+  a collector backend (Jaeger/Tempo/etc.) — a bigger, separate effort if
+  it's ever needed beyond what log correlation already gives you.
+- Alerts with documented operator actions. Still open — needs an alerting
+  backend (PagerDuty, Opsgenie, or even just a monitored Slack webhook) to
+  alert _through_; nothing to configure without one.
+- ~~Health and readiness endpoints for deployable processes.~~ Done for the
+  API (see above). Worker/queue don't have an HTTP endpoint to check (see
+  the note in "Verify and harden the Docker development stack") — their
+  heartbeat logs are the closest equivalent today.
 
-### P1: Backup, recovery, and retention
+### P1: Backup, recovery, and retention — local restore drill verified, production automation blocked on hosting choice
+
+Added [`docs/backup-and-recovery.md`](backup-and-recovery.md): what needs
+backing up (Postgres — everything; object storage — signed consent
+PDFs/signatures, which a Postgres-only backup would silently lose; Redis —
+deliberately not backed up, it's disposable broker/rate-limit state), a
+recommended strategy once a managed Postgres provider is chosen, and a
+**verified working** local backup/restore drill
+(`scripts/backup_local_db.sh` / `scripts/restore_local_db.sh`, also
+`make backup-db` / `make restore-db`). Verified this session: dumped the
+real local dev database, restored it into a separate throwaway database,
+and confirmed row counts matched exactly across `patients`, `organizations`,
+`booking_requests`, and `audit_events` before dropping the test database.
 
 Acceptance criteria:
 
-- Automated PostgreSQL backups and tested point-in-time recovery.
-- Object-storage backup/versioning appropriate to signed records.
-- Documented recovery-point and recovery-time objectives.
-- Regular restoration tests.
+- Automated PostgreSQL backups and tested point-in-time recovery. Manual
+  local restore is verified (see above); _automated_ backups need a
+  managed Postgres provider chosen first.
+- Object-storage backup/versioning appropriate to signed records. Still
+  open — needs bucket versioning configured at provisioning time.
+- Documented recovery-point and recovery-time objectives. Still open —
+  this is a business decision (how much data loss / downtime is
+  acceptable), not an engineering default; flagged as such in the runbook.
+- ~~Regular restoration tests.~~ One manual restoration test is done and
+  documented (see above). "Regular" (scheduled, automated, against a real
+  backup) is still open.
 - Retention schedules covering medical records, audit data, messages, and
-  generated documents.
-- Legally reviewed deletion and archival processes.
+  generated documents. Still open — same category as the legal/privacy
+  content review in "Landing page and public booking": needs qualified
+  legal counsel per jurisdiction, not an engineering default.
+- Legally reviewed deletion and archival processes. Still open, same
+  reason.
 
-### P2: Migration and release discipline
+### P2: Migration and release discipline — CI validation and a startup schema guard done
 
-Acceptance criteria:
+- ~~Validate Alembic migrations in CI against a clean database.~~ Done —
+  see "CI completeness" and "Backend integration tests" (added last pass):
+  CI now runs `alembic upgrade head` against a fresh Postgres service
+  container and `alembic check` before the test suite.
+- ~~Prevent application startup against unsupported schema versions.~~
+  Added `core/schema_check.py`: computes the migration head from the
+  `migrations/` directory actually bundled in the running build (via
+  Alembic's own `ScriptDirectory`, not a hand-maintained constant that's
+  easy to forget to update) and compares it against the database's
+  `alembic_version` row, raising `SchemaMismatchError` on any mismatch —
+  including "no `alembic_version` table at all" (migrations never ran).
+  Called from the API's `lifespan` (every environment, not just
+  production — a mismatch is exactly as real a problem in local dev) and
+  from both worker entry points (`medical_worker.main` and the dramatiq
+  CLI's `medical_worker.tasks`, which has no async startup hook of its
+  own — the check runs in a one-shot `asyncio.run()` at module import
+  time instead). Covered by `test_schema_check.py` (matches-at-head,
+  wrong-revision, and missing-table cases, each using an isolated
+  throwaway database rather than mutating the shared test database's own
+  `alembic_version` row) and verified live: restarted the full Docker
+  stack and confirmed both the API and worker start cleanly against the
+  real migrated schema.
 
-- Validate Alembic migrations in CI against a clean database.
-- Define backward-compatible deployment rules.
-- Provide release notes and schema-change procedures.
-- Prevent application startup against unsupported schema versions.
+  Wiring this into `tasks.py` surfaced a real, unrelated, pre-existing
+  reliability bug: dramatiq's `--processes` launches multiple OS processes
+  that each independently `import medical_worker.tasks` at nearly the same
+  instant, and if Python's bytecode cache hasn't been precompiled, several
+  processes can race to write the same `__pycache__/*.pyc` file and
+  corrupt it (`EOFError: marshal data too short` — a known CPython
+  multiprocessing hazard, not specific to this codebase; the extra imports
+  this change added just made the race window big enough to hit on the
+  very first restart). Fixed by precompiling bytecode at image-build time
+  in both `apps/worker/Dockerfile` and `apps/api/Dockerfile` (the latter
+  pre-emptively, in case the API ever runs with multiple workers). Verified
+  by restarting the `worker-queue` container (8 dramatiq processes) three
+  times in a row with zero errors, versus a reproducible failure before the
+  fix.
+
+- Define backward-compatible deployment rules. Still open.
+- Provide release notes and schema-change procedures. Still open.
 
 ## Recommended delivery order
 
@@ -1486,7 +1641,18 @@ Acceptance criteria:
     Cypress — nothing installed yet), and "Performance and resilience
     tests" (needs real load-testing tooling and infra to test against).
 14. Complete production infrastructure, observability, backup, recovery,
-    security, and compliance reviews.
+    security, and compliance reviews. Observability (correlated structured
+    logs, worker heartbeats, readiness checks) and a startup schema-version
+    guard are done; a verified local backup/restore drill and runbook
+    exist. See "Infrastructure and production operations" for the full
+    breakdown. **Still blocked on your input, not more engineering time:**
+    production deployment infrastructure needs an actual hosting/managed-
+    Postgres provider decision before anything else in that area can be
+    built; metrics/tracing/alerting need a monitoring-backend choice;
+    retention/deletion schedules need qualified legal review per
+    jurisdiction (same category as the legal-content item). Everything
+    else in this item (automated production backups, RPO/RTO, security and
+    compliance reviews) is downstream of those decisions.
 
 ## Release warning
 

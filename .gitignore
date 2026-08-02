@@ -45,6 +45,9 @@ pnpm-debug.log*
 services/postgres/data/
 services/storage/data/
 
+# scripts/backup_local_db.sh output — real DB dumps, never committed
+backups/
+
 # Generated
 apps/api/src/medical_api/**/__pycache__/
 coverage/

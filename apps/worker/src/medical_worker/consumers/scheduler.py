@@ -47,6 +47,10 @@ async def _run_reminder_loop() -> None:
     while True:
         try:
             check_due_reminders.send()
+            # Doubles as this loop's heartbeat — at a 5-minute interval
+            # there's no need for a separate every-N-ticks counter like the
+            # outbox consumer's, one line per tick is already infrequent.
+            logger.info("scheduler.check_due_reminders_enqueued")
         except Exception:
             # A Redis hiccup enqueuing this tick shouldn't kill the whole
             # scheduler loop — just log and try again next tick.
@@ -58,6 +62,7 @@ async def _run_missed_appointment_loop() -> None:
     while True:
         try:
             check_missed_appointments.send()
+            logger.info("scheduler.check_missed_appointments_enqueued")
         except Exception:
             logger.exception("scheduler.check_missed_appointments_failed")
         await asyncio.sleep(MISSED_APPOINTMENT_CHECK_INTERVAL_SECONDS)

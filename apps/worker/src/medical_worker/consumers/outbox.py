@@ -8,7 +8,7 @@ import asyncio
 from datetime import UTC, datetime
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from medical_api.core.database import async_session_factory
 from medical_api.modules.notifications.models import OutboxEvent
@@ -21,6 +21,12 @@ logger = structlog.get_logger(__name__)
 POLL_INTERVAL_SECONDS = 2
 BATCH_SIZE = 50
 MAX_ATTEMPTS = 5
+# Purely a liveness/backlog signal for operators watching logs — at the
+# default 2s poll interval this is roughly every 5 minutes. Without this,
+# the only log line this loop ever produces is "started", so there's no
+# way to distinguish "healthy and idle" from "silently stuck" without
+# externally verifying a fresh outbox row actually gets processed.
+HEARTBEAT_EVERY_N_POLLS = 150
 
 _EVENT_HANDLERS = {
     "appointment.scheduled": handle_appointment_scheduled,
@@ -58,8 +64,20 @@ async def _process_once() -> None:
         await session.commit()
 
 
+async def _backlog_size(session) -> int:
+    stmt = select(func.count()).where(
+        OutboxEvent.processed_at.is_(None), OutboxEvent.attempts < MAX_ATTEMPTS
+    )
+    return (await session.execute(stmt)).scalar_one()
+
+
 async def run_outbox_consumer() -> None:
     logger.info("outbox_consumer.started", poll_interval=POLL_INTERVAL_SECONDS)
+    polls = 0
     while True:
         await _process_once()
+        polls += 1
+        if polls % HEARTBEAT_EVERY_N_POLLS == 0:
+            async with async_session_factory() as session:
+                logger.info("outbox_consumer.heartbeat", backlog=await _backlog_size(session))
         await asyncio.sleep(POLL_INTERVAL_SECONDS)

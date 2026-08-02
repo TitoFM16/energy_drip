@@ -16,6 +16,13 @@ COPY apps/api ./apps/api
 COPY apps/worker ./apps/worker
 
 RUN uv sync --package medical-api --frozen
+# Precompiled here so a future multi-worker deployment (`fastapi run
+# --workers N`, or any other multi-process launch) never hits multiple
+# processes racing to compile-and-write the same __pycache__/*.pyc file —
+# see apps/worker/Dockerfile's identical step for the concrete failure
+# this avoids (`EOFError: marshal data too short`, hit by dramatiq's
+# multi-process worker startup this session).
+RUN uv run --project /workspace --package medical-api python -m compileall -q /workspace
 
 WORKDIR /workspace/apps/api
 EXPOSE 8000
