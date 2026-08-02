@@ -1,5 +1,5 @@
 # See apps/staff-web/Dockerfile for why the build context is the repo root.
-FROM node:22-slim
+FROM node:26-slim
 
 RUN corepack enable pnpm && corepack prepare pnpm@9.12.0 --activate
 
