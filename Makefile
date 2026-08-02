@@ -1,4 +1,4 @@
-.PHONY: install dev dev-local up down api worker migrate migrate-new seed test lint format backup-db restore-db generate-api-types
+.PHONY: install dev dev-local up down api worker migrate migrate-new seed test lint format backup-db restore-db generate-api-types e2e
 
 install:
 	pnpm install
@@ -53,6 +53,13 @@ backup-db:
 
 restore-db:
 	./scripts/restore_local_db.sh $(file) $(db)
+
+# Cross-app browser flows against the full `docker compose up` stack — see
+# apps/e2e/README.md. Not part of `make test`: needs the whole stack
+# running, not just built artifacts, and is meaningfully slower.
+e2e:
+	pnpm --filter @medical-platform/e2e exec playwright install --with-deps chromium
+	pnpm run test:e2e
 
 test:
 	pnpm turbo test

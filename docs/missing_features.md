@@ -227,6 +227,16 @@ therefore no longer tracked as wholly missing:
   (dialogs/tables/date-pickers — no existing duplication to extract yet;
   design-tokens CSS files remain unused since neither app reads CSS custom
   properties).
+- Added `apps/e2e`: Playwright end-to-end tests against the real
+  `docker compose up` stack, wired into CI as a third job. 3 flows covered
+  (staff login → appointment booking, the full cross-app patient consent
+  flow, the public booking form) — verified these actually catch
+  regressions, not just that they pass, by deliberately breaking a button
+  and watching the suite fail before reverting. See "End-to-end tests"
+  above for the full list of what's covered vs. still open, and two real
+  environment gotchas (slot-grid alignment near day-end, the booking
+  rate-limiter applying to repeated local test runs) worth knowing about
+  before extending this suite.
 
 ## Priority levels
 
@@ -1441,17 +1451,82 @@ Acceptance criteria:
 - Test PDF creation, hashing, and document records.
 - Test notification retries and callback idempotency.
 
-### P1: End-to-end tests
+### P1: End-to-end tests — Playwright framework chosen and wired into CI; 3 of 7 flows covered
+
+Chose Playwright over Cypress: better multi-origin/multi-context support in
+one test (this product's most valuable flows genuinely span two separate
+frontend apps — staff-web creates a consent request, patient-web completes
+it — which Cypress historically handles worse), native TypeScript, and no
+separate paid dashboard needed for CI reporting.
+
+New `apps/e2e` package — see [`apps/e2e/README.md`](../apps/e2e/README.md)
+for how to run it locally. Runs against the real `docker compose up` stack
+(all nine services), not a mocked environment. Each test is fully
+self-contained: `tests/support/api-setup.ts` registers a fresh
+organization/practitioner/treatment/published-consent-template directly
+against the API before touching a browser, using
+`@medical-platform/api-client`'s generated types for the request/response
+shapes — no dependency on `make seed` or any other test's data, avoiding
+the same shared-dev-database pollution problem `test_auth_flows.py` hit
+earlier (see "Backend integration tests").
+
+Covers 3 flows so far:
+
+- Staff logs in **through the real login form** (not a token injected into
+  storage), books an available slot for a patient, confirms it lands on
+  the agenda.
+- The full patient-facing consent flow end to end: questionnaire →
+  treatment info → hand-drawn canvas signature → review → submit, driven
+  from patient-web via a real single-use token, then confirmed from
+  staff-web's review screen (the eligibility badge shows correctly). This
+  is the single highest-value flow in the product — the one place the
+  API, both frontend apps, and (indirectly) the worker's outbox-consumer
+  path all have to agree with each other.
+- The public, unauthenticated `/reservar` booking form on landing.
+
+Wired into `.github/workflows/ci.yml` as a third job: brings up the full
+Docker Compose stack, waits on `/health/ready` plus each frontend's own
+readiness, runs the suite, uploads the Playwright report as an artifact on
+failure.
+
+**Verified these tests actually catch regressions, not just that they
+pass**: deliberately hardcoded the "Confirmar cita" button to
+`disabled` in `booking-panel.tsx`, re-ran the appointment-booking test,
+watched it fail with a precise error (button not enabled, 30s timeout),
+reverted, watched it pass again. Also hit two real environment issues
+while building this that are worth knowing about if these start flaking:
+availability-rule time windows are interpreted as UTC and slots are
+generated on a grid aligned to the rule's `start_time` — a narrow window
+can run out of grid-aligned slots between "now" and day-end depending on
+what time the test happens to run (fixed by testing against tomorrow, not
+today, and using a near-24-hour rule window); and the public booking
+form's rate limiter (5 requests/hour/IP — see "Connected public booking
+experience") applies to repeated local test runs from the same machine
+just as it would to a real abusive caller, so don't be surprised if
+`public-booking.spec.ts` needs a Redis key cleared after several manual
+reruns in a row (`redis-cli DEL booking_request:<ip>` — not `FLUSHDB`,
+which also clears dramatiq's queue state in the same Redis instance).
 
 Acceptance criteria:
 
-- Staff login through appointment creation.
-- Patient creation and medical-history update.
-- Treatment-plan and session recording.
-- Appointment-to-consent delivery.
-- Mobile questionnaire, signature, and submission.
-- Staff medical review and signed-document retrieval.
+- ~~Staff login through appointment creation.~~ Done.
+- Patient creation and medical-history update. Patient creation is
+  exercised as test setup in every flow above, but not as its own
+  assertion-bearing test; medical-history update isn't covered (the
+  underlying feature itself is still incomplete — see "Complete
+  medical-record API").
+- Treatment-plan and session recording. Not covered yet.
+- ~~Appointment-to-consent delivery.~~ Partially — the consent flow test
+  covers request creation through patient completion; it doesn't cover
+  the WhatsApp delivery step itself (nothing to assert against without
+  real Meta credentials — see `docs/whatsapp-setup.md`).
+- ~~Mobile questionnaire, signature, and submission.~~ Done.
+- Staff medical review and signed-document retrieval. The eligibility
+  review is covered; signed-PDF retrieval isn't (depends on the worker's
+  PDF-generation step, which the current test doesn't wait on).
 - Reminder cancellation after appointment cancellation or patient opt-out.
+  Not covered — opt-out handling doesn't exist yet as a feature (see
+  "Patient communication preferences and opt-out").
 
 ### P2: Performance and resilience tests
 

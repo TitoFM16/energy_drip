@@ -95,3 +95,45 @@ jobs:
       # apiFetch, patient-web's form-validation/payload helpers, landing's
       # booking-payload builder) never actually ran in CI before this.
       - run: pnpm turbo lint typecheck test build
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Playwright's browser
+        run: pnpm --filter @medical-platform/e2e exec playwright install --with-deps chromium
+      # Every credential docker-compose.yml needs has a safe empty/dev
+      # default baked in (${VAR:-} etc.) — no .env file or secrets needed
+      # to bring the stack up here, same as any local `docker compose up`.
+      - name: Start the full stack
+        run: docker compose up -d --build
+      - name: Wait for every service to actually be ready
+        # /health/ready checks Postgres and Redis connectivity (see
+        # apps/api/src/medical_api/main.py) — a plain "is the port open"
+        # check would pass before migrations/startup actually finished.
+        run: |
+          timeout 180 bash -c 'until curl -sf http://localhost:8000/health/ready; do sleep 3; done'
+          timeout 60 bash -c 'until curl -sf http://localhost:5173 >/dev/null; do sleep 2; done'
+          timeout 60 bash -c 'until curl -sf http://localhost:5174 >/dev/null; do sleep 2; done'
+          timeout 60 bash -c 'until curl -sf http://localhost:5175 >/dev/null; do sleep 2; done'
+      - name: Run end-to-end tests
+        run: pnpm --filter @medical-platform/e2e test:e2e
+      - name: Docker compose logs
+        if: failure()
+        run: docker compose logs --tail 300
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/e2e/playwright-report/
+          retention-days: 7
+      - name: Tear down the stack
+        if: always()
+        run: docker compose down -v

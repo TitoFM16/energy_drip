@@ -12,7 +12,8 @@
     "typecheck": "turbo typecheck",
     "test": "turbo test",
     "format": "prettier --write .",
-    "generate:api-types": "pnpm --filter @medical-platform/api-client run generate"
+    "generate:api-types": "pnpm --filter @medical-platform/api-client run generate",
+    "test:e2e": "pnpm --filter @medical-platform/e2e test:e2e"
   },
   "devDependencies": {
     "prettier": "^3.3.3",
