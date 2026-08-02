@@ -1,4 +1,4 @@
-.PHONY: install dev dev-local up down api worker migrate migrate-new test lint format
+.PHONY: install dev dev-local up down api worker migrate migrate-new seed test lint format
 
 install:
 	pnpm install
@@ -32,6 +32,13 @@ migrate:
 
 migrate-new:
 	cd apps/api && uv run --package medical-api alembic revision --autogenerate -m "$(name)"
+
+# Demo data for local dev: patients, a practitioner, availability, a
+# treatment catalogue entry, and a published consent template with a
+# working eligibility rule set. Idempotent. Requires the clinic to already
+# be bootstrapped (see apps/api/scripts/bootstrap_clinic.py).
+seed:
+	cd apps/api && uv run --package medical-api python scripts/seed_reference_data.py
 
 test:
 	pnpm turbo test

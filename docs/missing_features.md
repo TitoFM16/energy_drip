@@ -120,6 +120,11 @@ therefore no longer tracked as wholly missing:
   (non-production only) — see "Verify and harden the Docker development
   stack" above. A fresh `docker compose up` no longer 500s on the first
   consent submission.
+- `make seed` / `apps/api/scripts/seed_reference_data.py` provides
+  idempotent demo data including a working consent eligibility rule set —
+  see "Reference and demonstration data" above (also notes a discovered
+  test-hygiene issue: the auth integration test suite pollutes the shared
+  dev database with hundreds of throwaway organizations over time).
 
 ## Priority levels
 
@@ -181,17 +186,47 @@ Remaining acceptance criteria:
   organization (no "organization suspension" concept needed at single-tenant
   scale).
 
-### P1: Reference and demonstration data
+### P1: Reference and demonstration data — seed command done
 
-Local development needs repeatable data for appointments, patients, treatment
-definitions, consent templates, and notification workflows.
+`apps/api/scripts/seed_reference_data.py` (`make seed`) creates: a demo
+practitioner user + `Practitioner` profile, Monday–Friday 09:00–17:00
+availability rules for them, two demo patients, a treatment catalogue
+entry, and a **published** consent template version with a real,
+working eligibility rule set (`pregnant == true` → `not_eligible`,
+`pregnant == false` → `eligible`, unanswered → `requires_manual_review`) —
+this is currently the only way to see the eligibility engine actually
+produce `eligible`/`not_eligible` results, since the template-authoring UI
+has no rule builder yet (see "Consent-template administration and
+publishing"). Every entity is looked up by a fixed identifier before being
+created, so re-running is a no-op — verified by running it twice and
+diffing the output. It refuses to run when `ENVIRONMENT=production` (same
+gate as `register-organization`) and requires the clinic to already be
+bootstrapped, clearly separating it from `bootstrap_clinic.py`'s one-time
+production path. Also added `OrganizationRepository.get_first()`, since
+this product has exactly one organization and several call sites (this
+script included) need to resolve "the" organization without an ID.
 
-Acceptance criteria:
+Note from verifying this: the shared local dev Postgres has accumulated
+**hundreds** of throwaway `organization`/`user` rows named "Test Clinic
+{uuid}" from running the `pytest` auth-integration suite repeatedly over
+this project's life — those tests hit a real database and never roll back
+or clean up. `get_first()` is correct for its real intended use (production
+only ever has one organization), but it means `get_first()`/the seed script
+can silently land on some ancient test-created organization instead of
+whichever one a developer has actually been using locally, if the dev DB is
+this polluted. Worth adding transactional rollback (or an explicit
+per-test-run marker + cleanup) to `apps/api/tests/test_auth_flows.py` at
+some point — tracked under "Backend integration tests" below, not fixed in
+this pass.
 
-- Provide an idempotent development seed command.
-- Clearly separate demonstration data from production bootstrap data.
-- Include at least one usable consent template version and eligibility rule set.
-- Include representative staff roles and clinic resources.
+Remaining acceptance criteria:
+
+- Seed data for appointments and notification workflows (patients,
+  practitioners, treatments, and a consent template are covered; no seeded
+  appointment or notification/reminder example yet).
+- Seed the complete standard role catalogue (only the roles exercised by
+  invites/register-organization/this script exist today — see "Single-clinic
+  bootstrap").
 
 ## 2. Staff application and clinical workflows
 
@@ -824,6 +859,14 @@ Acceptance criteria:
 
 - Run authentication tests against PostgreSQL in CI rather than allowing them to
   skip.
+- Wrap `test_auth_flows.py` in a transaction that rolls back per test (or
+  otherwise clean up what it creates). It hits a real database and commits
+  real rows with no teardown; run against a long-lived local dev database
+  enough times and it silently accumulates hundreds of throwaway
+  organizations and users, which then confuses anything that assumes "the"
+  single organization is the one a developer is actually using (discovered
+  while verifying `apps/api/scripts/seed_reference_data.py` — see
+  "Reference and demonstration data").
 - Test all repositories and both upgrade/downgrade migration paths against
   PostgreSQL.
 - Expand authentication coverage to permissions, session revocation, abuse
