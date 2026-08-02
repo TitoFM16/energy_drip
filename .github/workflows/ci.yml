@@ -57,6 +57,16 @@ jobs:
         # every "forgot to generate/commit a migration for a model change"
         # case with an already-registered model is exactly what this catches).
         run: uv run --project ../.. --package medical-api alembic check
+      - name: Regenerate OpenAPI schema and check for drift
+        working-directory: apps/api
+        # Building the schema is pure route/Pydantic-model introspection —
+        # no live server or database needed (see the script's docstring).
+        # Only the JSON schema step runs here; the TypeScript-generation
+        # step (packages/api-client's `generate:types`) runs in the
+        # frontend job below, since it needs pnpm/node, not uv/Python.
+        run: |
+          uv run --project ../.. --package medical-api python scripts/dump_openapi_schema.py
+          git diff --exit-code -- ../../packages/api-client/generated/openapi.json
       # Runs against the real Postgres/Redis services above rather than
       # skipping — DB/Redis-backed integration tests (auth flows,
       # authorization/audit, booking rate limiting) previously only ran
@@ -73,6 +83,14 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Regenerate TypeScript API types and check for drift
+        working-directory: packages/api-client
+        # Reads the openapi.json the backend job's step already verified is
+        # fresh — this step only needs to confirm the *TypeScript* is in
+        # sync with *that* file, not regenerate it from the live API too.
+        run: |
+          pnpm run generate:types
+          git diff --exit-code -- generated/schema.d.ts
       # `test` was missing from this list — frontend unit tests (staff-web's
       # apiFetch, patient-web's form-validation/payload helpers, landing's
       # booking-payload builder) never actually ran in CI before this.

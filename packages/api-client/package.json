@@ -6,7 +6,9 @@
   "main": "./hooks/index.ts",
   "types": "./hooks/index.ts",
   "scripts": {
-    "generate": "openapi-typescript http://localhost:8000/openapi.json -o generated/schema.d.ts"
+    "generate:schema": "cd ../../apps/api && uv run --project ../.. --package medical-api python scripts/dump_openapi_schema.py",
+    "generate:types": "openapi-typescript generated/openapi.json -o generated/schema.d.ts",
+    "generate": "pnpm run generate:schema && pnpm run generate:types"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4"

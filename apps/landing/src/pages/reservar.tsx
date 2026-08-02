@@ -1,14 +1,11 @@
+import type { Schemas } from '@medical-platform/api-client';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { SimplePage } from '../components/page-layout';
 import { buildBookingRequestPayload } from '../features/booking/build-payload';
 import { apiFetch, ApiError } from '../shared/api';
 
-interface PublicTreatment {
-  id: string;
-  name: string;
-  description: string | null;
-}
+type PublicTreatment = Schemas['PublicTreatmentRead'];
 
 type SubmitState =
   | { status: 'idle' }

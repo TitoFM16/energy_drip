@@ -6,6 +6,10 @@ foundation into a usable, secure, and production-ready medical platform.
 Last reviewed: 2026-08-01, after the single-clinic scope correction below
 (session following commit `c77858f`).
 
+See [`blocked-on-owner-input.md`](blocked-on-owner-input.md) for the
+checklist of everything below that needs a decision, an account, or a
+review from the clinic owner rather than more engineering time.
+
 ## Product scope correction (2026-08-01) — resolved
 
 **This is a single-clinic product, not multi-tenant SaaS.** There is exactly
@@ -197,6 +201,20 @@ therefore no longer tracked as wholly missing:
   landing content/SEO and the legal-content review (both in the same
   numbered section) are untouched — they need real brand/business content
   and qualified-counsel review respectively, not engineering work.
+- `packages/api-client`'s generated TypeScript types are now real —
+  `generate:schema`/`generate:types` produce
+  `generated/{openapi.json,schema.d.ts}` from the FastAPI app directly (no
+  server needs to be running), CI fails on drift in either file, and two
+  hand-typed interfaces (staff-web's `Patient`, landing's
+  `PublicTreatment`) were replaced with generated types as a proof the
+  pattern works — see "Generated TypeScript API contract" above for what's
+  done and the larger incremental cleanup still open.
+- Added [`blocked-on-owner-input.md`](blocked-on-owner-input.md): a
+  standalone checklist of everything in this document that needs a
+  decision, account, or review from the clinic owner rather than more
+  engineering time (WhatsApp/Meta setup, hosting/managed-database choice,
+  legal review, landing content, monitoring-backend choice, branch
+  protection).
 
 ## Priority levels
 
@@ -956,18 +974,71 @@ Acceptance criteria:
 
 ## 6. Shared packages and API contract
 
-### P1: Generated TypeScript API contract
+### P1: Generated TypeScript API contract — generation done and enforced in CI, adoption across apps still incremental
 
-The API client package exists, but the OpenAPI schema and typed client are not
-currently generated as part of normal development or CI.
+`packages/api-client` already had a `generate` script and `openapi-typescript`
+as a dependency, but nothing had ever actually run it — `generated/` held
+only a `.gitkeep`. Also, the script as written needed a live server
+(`openapi-typescript http://localhost:8000/openapi.json`), which meant
+generating types locally required `docker compose up` first, and running it
+in CI would have meant standing up the whole app just to read its own route
+table.
+
+Fixed:
+
+- Added `apps/api/scripts/dump_openapi_schema.py`, which imports the FastAPI
+  `app` object and calls `.openapi()` directly — building the schema is pure
+  route/Pydantic-model introspection, no database or Redis involved, so this
+  needs no running server at all. Writes
+  `packages/api-client/generated/openapi.json`.
+- Split the package's `generate` script into `generate:schema` (runs the
+  Python dump) and `generate:types` (runs `openapi-typescript` against that
+  now-static file) so each half only needs the toolchain it actually
+  requires — useful for CI, where the backend job has `uv`/Python but not
+  `pnpm`, and the frontend job has `pnpm`/node but not `uv`.
+- `make generate-api-types` / `pnpm run generate:api-types` at the repo root
+  for a one-command regeneration.
+- CI now fails on drift in both directions: the backend job regenerates
+  `openapi.json` from the live route table and diffs it against the
+  committed version (catches "changed a response model, forgot to
+  regenerate"); the frontend job regenerates `schema.d.ts` from the
+  committed `openapi.json` and diffs that (catches "openapi.json changed, or
+  the codegen tool's output format changed, but the TypeScript wasn't
+  regenerated"). Verified locally by running both regeneration steps twice
+  in a row and confirming no diff either time.
+- `hooks/index.ts` now exports the generated `paths`/`operations`/
+  `components` types plus a `Schemas` convenience alias
+  (`Schemas['PatientRead']` instead of the more awkward
+  `components['schemas']['PatientRead']`).
+- Replaced two hand-typed, manually-duplicated response interfaces with the
+  generated types as a proof the pattern works end to end: staff-web's
+  `features/patients/types.ts` (`Patient`) and landing's `reservar.tsx`
+  (`PublicTreatment`) — both now `type X = Schemas['XRead']` instead of a
+  parallel hand-maintained interface. Verified: full `pnpm turbo lint
+typecheck test build` passes across all three apps.
 
 Acceptance criteria:
 
-- Generate TypeScript definitions from FastAPI OpenAPI.
-- Provide a repeatable generation command.
-- Fail CI when committed generated output is stale.
-- Replace manually duplicated response interfaces where practical.
-- Preserve public-consent and authenticated-staff client separation.
+- ~~Generate TypeScript definitions from FastAPI OpenAPI.~~ Done.
+- ~~Provide a repeatable generation command.~~ Done (`make
+generate-api-types`).
+- ~~Fail CI when committed generated output is stale.~~ Done, see above.
+- Replace manually duplicated response interfaces where practical. Started,
+  not finished — staff-web alone has hand-typed interfaces in
+  `features/{patients,scheduling,consents,auth,treatments,users}/types.ts`
+  that duplicate API response shapes, and patient-web has its own. Only
+  replaced two as a working proof of the pattern this pass; the rest is a
+  larger, lower-risk-when-done-incrementally cleanup rather than a single
+  sweep (each replacement needs checking the generated shape actually
+  matches what the component expects — nullability/optionality can differ
+  in ways worth catching one at a time, not all at once).
+- ~~Preserve public-consent and authenticated-staff client separation.~~
+  Preserved by construction: this only generates _types_, not a runtime
+  client. Each app still owns its own `apiFetch`/auth-handling wrapper
+  (`shared/api.ts` in each app) — the generated types just describe request/
+  response shapes for whichever wrapper calls them, so the public
+  (patient-web, landing) and authenticated-staff (staff-web) call paths
+  never share a runtime client or auth assumptions.
 
 ### P2: Shared UI, forms, and design system
 

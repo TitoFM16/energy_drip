@@ -1,4 +1,4 @@
-.PHONY: install dev dev-local up down api worker migrate migrate-new seed test lint format backup-db restore-db
+.PHONY: install dev dev-local up down api worker migrate migrate-new seed test lint format backup-db restore-db generate-api-types
 
 install:
 	pnpm install
@@ -39,6 +39,12 @@ migrate-new:
 # be bootstrapped (see apps/api/scripts/bootstrap_clinic.py).
 seed:
 	cd apps/api && uv run --package medical-api python scripts/seed_reference_data.py
+
+# Regenerates packages/api-client/generated/{openapi.json,schema.d.ts}
+# from the FastAPI app's own route/schema definitions — no server needs to
+# be running. CI fails if either committed file is stale (see ci.yml).
+generate-api-types:
+	pnpm run generate:api-types
 
 # Local dev backup/restore verification — see docs/backup-and-recovery.md.
 # Not a production backup strategy.

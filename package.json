@@ -11,7 +11,8 @@
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "generate:api-types": "pnpm --filter @medical-platform/api-client run generate"
   },
   "devDependencies": {
     "prettier": "^3.3.3",
