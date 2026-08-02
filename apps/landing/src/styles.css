@@ -773,6 +773,78 @@ a {
   font-size: 13px;
 }
 
+.booking-form {
+  display: flex;
+  padding: 30px 32px;
+  border: 1px solid rgb(21 51 44 / 12%);
+  background: #fffdf8;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.booking-form__row {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.booking-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.booking-form__label {
+  color: var(--forest);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.booking-form__input,
+.booking-form__select,
+.booking-form__textarea {
+  border: 1px solid rgb(21 51 44 / 18%);
+  border-radius: 8px;
+  padding: 11px 14px;
+  background: var(--ivory);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.booking-form__input:focus,
+.booking-form__select:focus,
+.booking-form__textarea:focus {
+  border-color: var(--gold);
+  outline: none;
+}
+
+.booking-form__textarea {
+  resize: vertical;
+}
+
+.booking-form__honeypot {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.booking-form__status {
+  margin: 0;
+  font-size: 13px;
+}
+
+.booking-form__status--error {
+  color: #a3402c;
+}
+
 .site-footer {
   padding: 75px max(28px, calc((100vw - 1160px) / 2)) 0;
   background: #061f19;
@@ -867,6 +939,10 @@ a {
 }
 
 @media (max-width: 700px) {
+  .booking-form__row {
+    grid-template-columns: 1fr;
+  }
+
   .site-header__note {
     font-size: 8px;
     letter-spacing: 0.12em;

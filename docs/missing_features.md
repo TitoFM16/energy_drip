@@ -158,6 +158,15 @@ therefore no longer tracked as wholly missing:
   against the running Docker stack with real cross-org tokens — see
   "Authorization, audit, and security" above for the full list of what's
   fixed and what's still open.
+- `/reservar` is now a real public booking-request form end to end
+  (public treatment listing, rate-limited and honeypot-protected booking
+  submission, org-scoped staff review endpoints, audit logging) instead of
+  a placeholder — see "Connected public booking experience" above.
+  Verified live with a real browser submission landing correctly in
+  Postgres, plus curl-driven rate-limit and honeypot checks. Production
+  landing content/SEO and the legal-content review (both in the same
+  numbered section) are untouched — they need real brand/business content
+  and qualified-counsel review respectively, not engineering work.
 
 ## Priority levels
 
@@ -832,18 +841,63 @@ Consider migration when:
 
 ## 5. Landing page and public booking
 
-### P1: Connected public booking experience
+### P1: Connected public booking experience — done
 
-The `/reservar` route exists but is not yet a complete booking workflow.
+`/reservar` is now a working, unauthenticated booking-request form backed by
+a new `booking` module, rather than a "coming soon" placeholder.
 
-Acceptance criteria:
+What's built:
 
-- Display only server-approved public treatment and availability information.
-- Collect the minimum patient details required to request a booking.
-- Prevent automated abuse with rate limiting and bot protection.
-- Create a booking request or appointment according to clinic policy.
-- Confirm the request without exposing private schedule or patient data.
-- Trigger confirmation and consent workflows when appropriate.
+- `GET /api/v1/public/treatments`: lists only active treatment
+  name/description for the clinic — no pricing, session counts, or other
+  internal fields (see `PublicTreatmentRead`).
+- `POST /api/v1/public/booking-requests`: creates a `BookingRequest` row
+  (not an `Appointment` directly — deliberately a request for staff to
+  confirm and act on through the existing internal patient/appointment
+  flows, so an anonymous caller never gets to see or claim real
+  availability). Validates the submitted `treatment_definition_id` belongs
+  to the org and is active. Response is a single fixed confirmation
+  message — never echoes back schedule, patient, or internal state.
+- Rate limiting: a Redis fixed-window counter
+  (`core/rate_limit.py`), 5 requests/hour per IP, returns `429` past the
+  limit. Verified live: 5 requests succeed, the 6th is rejected.
+- Bot protection: a honeypot field (`website`) hidden off-screen in the
+  real form (visually hidden, `tabIndex={-1}`, `aria-hidden`) — a
+  non-empty value silently drops the submission without persisting
+  anything, but returns the identical success response so an automated
+  submitter can't learn it was filtered. Verified live: a honeypot-filled
+  submission returns 201 but nothing lands in `booking_requests`.
+- Staff side: `GET /api/v1/booking-requests` and
+  `PATCH /api/v1/booking-requests/{id}/status` (roles:
+  `receptionist`/`assistant`/`practitioner`/`organization_admin`, matching
+  who can already create patients/appointments), org-scoped, and status
+  updates are recorded in the audit trail
+  (`booking_request.status_updated`).
+- The `/reservar` page itself: a real form (name, last name, WhatsApp
+  phone, optional email, treatment dropdown populated live from the API,
+  optional preferred date, optional message), matching the site's existing
+  visual design. Verified live end-to-end in a real browser: filled out
+  and submitted the form, confirmed the success screen, and confirmed the
+  submission landed in Postgres with the right data.
+- Landing gained its first real logic and test coverage: payload-shaping
+  (empty-optional-fields → `null`) is a pure function with unit tests; see
+  the updated comment in `apps/landing/vite.config.ts` for why the rest of
+  the app still has no tests (no DOM stack, mostly static content).
+
+Still open from the original acceptance criteria:
+
+- No staff-web UI to review incoming booking requests — only the API (and
+  the audit trail) surfaces them today; a staff member would need to call
+  the API directly or a future screen would need to be built.
+- No WhatsApp/email notification to staff when a request comes in (no
+  consumer exists for that yet — matches this project's "don't build a
+  notification path with no consumer" pattern from the WhatsApp work).
+- No automatic consent-workflow triggering — that only makes sense once
+  staff have converted a request into a real appointment, which is a
+  manual step through the existing internal flows.
+- The rate limiter is a simple fixed IP-keyed window (can be bypassed by
+  rotating IPs, and doesn't cover the public consent endpoints, which have
+  the same exposure but weren't in scope here).
 
 ### P2: Production landing-page content and SEO
 
@@ -1359,7 +1413,11 @@ Acceptance criteria:
     end (see "Authorization, audit, and security"). Still open: a formal
     permission matrix, record-level (assigned-practitioner) access rules,
     audit export tooling, and retention/integrity-monitoring policy.
-12. Connect public booking and finalize landing/legal content.
+12. ~~Connect public booking~~ and finalize landing/legal content. Public
+    booking is done — see "Connected public booking experience". Still
+    fully open: production landing content/SEO and the legal/privacy
+    content review, both of which need real brand content and qualified
+    legal counsel rather than engineering work.
 13. Add integration and end-to-end test coverage.
 14. Complete production infrastructure, observability, backup, recovery,
     security, and compliance reviews.

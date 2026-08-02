@@ -15,3 +15,7 @@ class ConflictError(DomainError):
 
 class PermissionDeniedError(DomainError):
     pass
+
+
+class RateLimitedError(DomainError):
+    pass

@@ -6,6 +6,7 @@ from medical_api.core.exceptions import (
     DomainError,
     NotFoundError,
     PermissionDeniedError,
+    RateLimitedError,
 )
 
 
@@ -21,6 +22,12 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(PermissionDeniedError)
     async def _permission_denied(_: Request, exc: PermissionDeniedError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_403_FORBIDDEN, content={"detail": str(exc)})
+
+    @app.exception_handler(RateLimitedError)
+    async def _rate_limited(_: Request, exc: RateLimitedError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, content={"detail": str(exc)}
+        )
 
     @app.exception_handler(DomainError)
     async def _domain_error(_: Request, exc: DomainError) -> JSONResponse:

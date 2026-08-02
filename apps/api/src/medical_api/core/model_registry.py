@@ -4,6 +4,7 @@ wherever the complete metadata is needed.
 """
 
 from medical_api.modules.audit import models as _audit_models  # noqa: F401
+from medical_api.modules.booking import models as _booking_models  # noqa: F401
 from medical_api.modules.consents import models as _consents_models  # noqa: F401
 from medical_api.modules.identity import models as _identity_models  # noqa: F401
 from medical_api.modules.medical_records import models as _medical_records_models  # noqa: F401

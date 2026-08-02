@@ -10,12 +10,13 @@ export default defineConfig({
     port: 5175,
   },
   test: {
-    // The landing app is currently static marketing content plus a
-    // placeholder /reservar page (the real public booking flow isn't built
-    // yet — see "Connected public booking experience" in
-    // docs/missing_features.md). There's nothing here worth testing until
-    // that lands; passWithNoTests keeps `pnpm test` green in the meantime
-    // instead of either failing the build or padding out hollow tests.
+    // Most of the landing app is still static marketing content with no
+    // logic worth testing — passWithNoTests keeps `pnpm test` green for
+    // that. The /reservar booking form's non-trivial logic (payload
+    // shaping) is covered directly; there's no DOM testing stack
+    // (jsdom/testing-library) here, so form interaction itself isn't
+    // covered — see "Connected public booking experience" in
+    // docs/missing_features.md.
     passWithNoTests: true,
   },
 });

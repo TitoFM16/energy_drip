@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from medical_api.api.v1 import (
     appointments,
     auth,
+    booking,
     consents,
     notifications,
     patients,
@@ -23,6 +24,7 @@ api_router.include_router(practitioners.router, prefix="/practitioners", tags=["
 api_router.include_router(treatments.router, prefix="/treatments", tags=["treatments"])
 api_router.include_router(consents.router, prefix="/consents", tags=["consents"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
+api_router.include_router(booking.router, prefix="/booking-requests", tags=["booking-requests"])
 api_router.include_router(audit_router, prefix="/audit", tags=["audit"])
 api_router.include_router(public.router, prefix="/public", tags=["public"])
 api_router.include_router(webhooks.router, prefix="/webhooks/whatsapp", tags=["webhooks"])
