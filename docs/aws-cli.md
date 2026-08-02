@@ -3,13 +3,13 @@
 This project uses an explicit named AWS CLI profile. Do not configure or depend on the
 `default` profile: this machine is used with multiple AWS accounts and projects.
 
-AWS configuration and temporary login tokens belong in the macOS user's standard
-`~/.aws` directory. Never copy `~/.aws`, access keys, SSO cache files, or credentials into
-this repository or one of its Git worktrees.
+AWS configuration and temporary login tokens belong in the macOS user's standard `~/.aws`
+directory. Never copy `~/.aws`, access keys, login cache files, or credentials into this
+repository or one of its Git worktrees.
 
 ## Prerequisites
 
-AWS CLI v2 is required:
+AWS CLI v2.32 or later is required for browser login:
 
 ```bash
 aws --version
@@ -21,44 +21,45 @@ On this Mac it is installed with Homebrew:
 brew install awscli
 ```
 
-## Configure this project's profile once
+## Configure and log in
 
-Ask the AWS administrator for the IAM Identity Center start URL, SSO region, AWS account,
-and least-privilege permission set assigned to this project. Then run:
-
-```bash
-aws configure sso --profile energy-drip-dev
-```
-
-Suggested values where the wizard asks for names:
-
-- SSO session name: `energy-drip`
-- CLI profile name: `energy-drip-dev`
-- Output format: `json`
-
-Choose the account, role, and region provided by the administrator. Do not configure access
-under the `default` profile and do not create long-lived IAM access keys for normal developer
-or agent access.
-
-The profile configuration is stored in `~/.aws/config`. SSO issues temporary tokens under
-`~/.aws/sso/cache`; it does not require secrets in the repository.
-
-## Log in
-
-Start or refresh the project's SSO session explicitly:
+Set only this project's named profile:
 
 ```bash
-aws sso login --profile energy-drip-dev
+aws configure set region us-east-1 --profile energy-drip-dev
+aws configure set output json --profile energy-drip-dev
 ```
 
-The command opens AWS authentication in a browser. A human must complete authentication and
-MFA when requested. Codex or Claude can use the resulting temporary session afterward.
-
-If browser launch is unavailable, use device authorization:
+Authenticate using the existing AWS Management Console identity:
 
 ```bash
-aws sso login --profile energy-drip-dev --use-device-code
+aws login --profile energy-drip-dev
 ```
+
+AWS CLI opens a browser. Sign in to the Energy Drip AWS account and approve local development
+access. The CLI creates temporary credentials, refreshes them during the session, and caches
+them under `~/.aws/login/cache`. No long-lived access key is required.
+
+If the browser cannot open on the same machine, run:
+
+```bash
+aws login --profile energy-drip-dev --remote
+```
+
+Do not omit `--profile`: doing so can create or update the `default` profile. Do not create
+long-lived IAM access keys for ordinary developer or agent access.
+
+## Identity requirements
+
+Do not use the AWS account root identity for ordinary CLI or agent operations. If identity
+verification returns an ARN ending in `:root`, use that session only to establish a protected,
+non-root administrative identity, then log out. Enable MFA on the root account and reserve it
+for tasks that specifically require root.
+
+The preferred routine identity is a least-privilege IAM role or IAM Identity Center permission
+set. An IAM user used with `aws login` needs Console access, MFA, the permissions required for
+the project, and AWS's `SignInLocalDevelopmentAccess` managed policy. Avoid broad administrator
+permissions for Codex or Claude.
 
 ## Verify the selected account
 
@@ -70,8 +71,8 @@ aws configure get region --profile energy-drip-dev
 ```
 
 Compare the returned `Account` ID and ARN with the expected project account before making
-changes. Do not paste the account ID, ARN, or temporary credentials into source files, issue
-trackers, or chat unless necessary.
+changes. Stop if the ARN ends in `:root`. Do not paste the account ID, ARN, or temporary
+credentials into source files, issue trackers, or chat unless necessary.
 
 Run every command with the explicit profile:
 
@@ -108,13 +109,13 @@ aws <service> <operation> --profile energy-drip-dev
 Before an agent performs AWS work, ask it to:
 
 1. Run `aws sts get-caller-identity --profile energy-drip-dev`.
-2. Show the account and role being used.
+2. Show the account and role being used and refuse to continue as root.
 3. Confirm the intended region.
 4. Use read-only discovery before mutations.
 5. Request confirmation before destructive or production-impacting operations.
 
 Agent sandboxes can still require approval for network access or for reading the user's AWS
-configuration. An expired SSO session requires the human user to run `aws sso login` again.
+configuration. An expired login session requires the human user to run `aws login` again.
 
 ## Multiple environments
 
@@ -136,27 +137,26 @@ List configured profile names without displaying credentials:
 aws configure list-profiles
 ```
 
-Log out of the project's SSO session when needed:
+End only this profile's temporary session:
 
 ```bash
-aws sso logout
+aws logout --profile energy-drip-dev
 ```
-
-Note that `aws sso logout` removes all cached AWS SSO sessions on the machine, not only this
-profile. Normally it is sufficient to let temporary sessions expire.
 
 ## Troubleshooting
 
-If the CLI reports an expired or invalid SSO token:
+If the CLI reports an expired or invalid login token:
 
 ```bash
-aws sso login --profile energy-drip-dev
+aws login --profile energy-drip-dev
 ```
 
-If it cannot find the profile, configure it again without changing the default profile:
+If it cannot find the profile, configure its region again without changing the default
+profile, then log in:
 
 ```bash
-aws configure sso --profile energy-drip-dev
+aws configure set region us-east-1 --profile energy-drip-dev
+aws login --profile energy-drip-dev
 ```
 
 If an agent cannot access AWS while the command works in your terminal, verify that the agent
