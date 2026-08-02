@@ -19,6 +19,10 @@ mobile consent with biometric signature, and WhatsApp/SMS notification automatio
 - Docker, for the all-in-Docker workflow below (recommended — no local Python/Node/Postgres needed)
 - Python 3.12+, [uv](https://docs.astral.sh/uv/), Node 20+, [pnpm](https://pnpm.io/) 9+ — only if you want the faster host-based dev loop instead
 
+AWS access is configured with an explicit named SSO profile so this project cannot silently
+use another project's account. See [`docs/aws-cli.md`](docs/aws-cli.md) for setup, login,
+account verification, and safe Codex/Claude usage.
+
 ## Getting started
 
 The whole stack runs in Docker — Postgres, Redis, MinIO, the API, the worker
