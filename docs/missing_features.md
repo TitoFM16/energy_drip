@@ -142,6 +142,10 @@ therefore no longer tracked as wholly missing:
 - Added [`docs/whatsapp-setup.md`](whatsapp-setup.md): a step-by-step
   operator runbook for the Meta account/template/webhook setup that only
   the clinic owner can do — see "Notification automation" above.
+- Reminders and missed-appointment checks now run on a schedule instead of
+  requiring a manual trigger — see "Automated reminder scheduling" above.
+  Verified live: it correctly auto-marked a real stale appointment as
+  `no_show` on its very first tick.
 
 ## Priority levels
 
@@ -724,19 +728,48 @@ Remaining acceptance criteria:
 - Audit meaningful delivery events without logging medical content — no
   audit-log integration yet (see "Audit coverage and integrity").
 
-### P1: Automated reminder scheduling
+### P1: Automated reminder scheduling — cron trigger done
 
-Reminder actors exist, but an external scheduler must invoke them.
+`check_due_reminders` and `check_missed_appointments` previously existed
+but nothing ever called them outside a manual invocation. A new
+`apps/worker/src/medical_worker/consumers/scheduler.py` runs two interval
+loops (5 minutes each — the reminder windows already tolerate ±5 minutes,
+so consecutive checks' windows overlap with no gap) as a second concurrent
+task in the same `worker` process as the outbox consumer (`main.py` now
+`asyncio.gather`s both) — no new service or dependency, matching the
+"simple first version" scheduling note already in
+`appointment_reminders.py`'s docstring. Verified live against the real
+Docker stack, not synthetically: restarted the `worker` container, both
+`outbox_consumer.started` and `scheduler.started` logged, and on the very
+first tick `check_missed_appointments` found and correctly marked `no_show`
+a real appointment left over from this session's earlier Agenda testing
+(confirmed by querying the row directly afterward) — not a contrived test
+fixture, an actual appointment that had genuinely gone stale.
 
-Acceptance criteria:
+Remaining acceptance criteria:
 
-- Schedule reminder scans reliably in every deployed environment.
 - Send confirmation, consent link, 24-hour reminder, and 2-hour reminder
-  according to clinic policy.
-- Re-check appointment and consent state immediately before sending.
-- Avoid duplicate reminders across retries and multiple workers.
-- Respect appointment rescheduling and cancellation.
-- Make reminder windows and templates organization-configurable.
+  according to clinic policy (the actors exist and now run on a schedule;
+  "according to clinic policy" implies configurable timing/content this
+  doesn't have yet — see the organization-configurable item below).
+- Re-check appointment and consent state immediately before sending (today
+  a reminder fires for any appointment in an active status at check time;
+  no explicit re-check of consent state specifically).
+- Avoid duplicate reminders across retries and multiple workers (the
+  existing `already_sent_ids` check in `appointment_reminders.py` guards
+  against re-sending the _same_ window's reminder on a later tick, but
+  there's no lock/dedup if two `worker` processes ever ran concurrently —
+  fine at this app's current single-worker deployment, worth revisiting
+  before running more than one).
+- Respect appointment rescheduling and cancellation (a cancelled/rescheduled
+  appointment falls out of `_ACTIVE_STATUSES`'s query on the next tick, so
+  it stops getting _new_ reminders, but there's no explicit
+  cancel-in-flight signal — acceptable for a 5-minute-interval poll, not
+  for anything needing faster reaction).
+- Make reminder windows and templates organization-configurable (still
+  hardcoded constants — reasonable for a single-clinic product with no
+  per-organization variation to configure, but worth noting as a real gap
+  if that ever changes).
 
 ### P1: Consent delivery automation
 
@@ -1210,14 +1243,15 @@ Acceptance criteria:
    decisions/rationale, filtering, and the signed-document viewer (see
    "Consent review workspace").
 9. Configure private, versioned object storage and document verification.
-10. ~~Connect real WhatsApp and SMS providers, callbacks~~ SMS is out of
-    scope by product decision (WhatsApp only). WhatsApp's client fails
-    safely and distinguishes retryable from permanent errors; the
-    delivery-status webhook is built and verified live. Still open: the
-    actual Meta Business account/template approval (an operator task —
-    nothing here is blocked on it), template param validation, and the
-    reminder-scheduling cron trigger (see "Notification automation" and
-    "Automated reminder scheduling").
+10. ~~Connect real WhatsApp and SMS providers, callbacks, and reminder
+    scheduling~~ SMS is out of scope by product decision (WhatsApp only).
+    WhatsApp's client fails safely and distinguishes retryable from
+    permanent errors; the delivery-status webhook is built and verified
+    live; reminders and missed-appointment checks now run on a schedule.
+    Still open: the actual Meta Business account/template approval (an
+    operator task — nothing here is blocked on it, see
+    `docs/whatsapp-setup.md`) and template param validation (see
+    "Notification automation").
 11. Complete audit coverage and the server authorization review.
 12. Connect public booking and finalize landing/legal content.
 13. Add integration and end-to-end test coverage.
