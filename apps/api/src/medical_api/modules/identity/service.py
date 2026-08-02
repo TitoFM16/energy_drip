@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from medical_api.core.config import get_settings
 from medical_api.core.security import create_access_token, hash_password, verify_password
+from medical_api.modules.audit.service import AuditService
 from medical_api.modules.identity.models import (
     PasswordResetToken,
     RefreshToken,
@@ -85,6 +86,13 @@ class AuthService:
         await self.users.create(user)
         await self.users.assign_role(user.id, admin_role.id)
 
+        await AuditService(self.session).record(
+            organization_id=organization.id,
+            actor_user_id=user.id,
+            action="organization.registered",
+            resource_type="organization",
+            resource_id=str(organization.id),
+        )
         tokens = await self._issue_tokens(user)
         return organization, tokens
 
@@ -128,6 +136,14 @@ class AuthService:
             expires_at=datetime.now(UTC) + timedelta(days=settings.invite_expire_days),
         )
         await self.invites.create(invite)
+        await AuditService(self.session).record(
+            organization_id=organization_id,
+            actor_user_id=invited_by_user_id,
+            action="invite.created",
+            resource_type="invite",
+            resource_id=str(invite.id),
+            metadata={"invited_email": email, "role": str(role)},
+        )
         return invite, raw_token
 
     async def accept_invite(self, raw_token: str, full_name: str, password: str) -> TokenResponse:
@@ -153,6 +169,14 @@ class AuthService:
         await self.users.assign_role(user.id, role.id)
         invite.accepted_at = now
 
+        await AuditService(self.session).record(
+            organization_id=invite.organization_id,
+            actor_user_id=user.id,
+            action="invite.accepted",
+            resource_type="user",
+            resource_id=str(user.id),
+            metadata={"role": str(invite.role)},
+        )
         return await self._issue_tokens(user)
 
     async def request_password_reset(self, email: str) -> str | None:
@@ -173,6 +197,13 @@ class AuthService:
                 + timedelta(hours=settings.password_reset_expire_hours),
             )
         )
+        await AuditService(self.session).record(
+            organization_id=user.organization_id,
+            actor_user_id=None,
+            action="password_reset.requested",
+            resource_type="user",
+            resource_id=str(user.id),
+        )
         return raw_token
 
     async def reset_password(self, raw_token: str, new_password: str) -> None:
@@ -185,3 +216,10 @@ class AuthService:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid or expired reset token")
         user.hashed_password = hash_password(new_password)
         reset_token.used_at = now
+        await AuditService(self.session).record(
+            organization_id=user.organization_id,
+            actor_user_id=user.id,
+            action="password_reset.confirmed",
+            resource_type="user",
+            resource_id=str(user.id),
+        )

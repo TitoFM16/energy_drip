@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends
 
 from medical_api.api.dependencies import AuthenticatedUser, DbSession
 from medical_api.core.security import require_roles
+from medical_api.modules.audit.service import AuditService
+from medical_api.modules.patients.repository import PatientRepository
 from medical_api.modules.treatments.repository import (
     TreatmentDefinitionRepository,
     TreatmentRepository,
@@ -34,6 +36,13 @@ async def create_treatment_definition(
 ) -> TreatmentDefinitionRead:
     service = TreatmentDefinitionService(TreatmentDefinitionRepository(session))
     definition = await service.create(user.organization_id, payload)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="treatment_definition.created",
+        resource_type="treatment_definition",
+        resource_id=str(definition.id),
+    )
     await session.commit()
     return definition
 
@@ -59,6 +68,14 @@ async def update_treatment_definition(
 ) -> TreatmentDefinitionRead:
     service = TreatmentDefinitionService(TreatmentDefinitionRepository(session))
     definition = await service.update(user.organization_id, definition_id, payload)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="treatment_definition.updated",
+        resource_type="treatment_definition",
+        resource_id=str(definition.id),
+        metadata={"fields": sorted(payload.model_dump(exclude_unset=True).keys())},
+    )
     await session.commit()
     return definition
 
@@ -72,8 +89,16 @@ async def update_treatment_definition(
 async def create_treatment_plan(
     payload: TreatmentPlanCreate, user: AuthenticatedUser, session: DbSession
 ) -> TreatmentPlanRead:
-    service = TreatmentService(TreatmentRepository(session))
+    service = TreatmentService(TreatmentRepository(session), PatientRepository(session))
     plan = await service.create_plan(user.organization_id, payload)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="treatment_plan.created",
+        resource_type="treatment_plan",
+        resource_id=str(plan.id),
+        metadata={"patient_id": str(plan.patient_id)},
+    )
     await session.commit()
     return plan
 
@@ -82,7 +107,7 @@ async def create_treatment_plan(
 async def list_treatment_plans(
     user: AuthenticatedUser, session: DbSession, patient_id: uuid.UUID
 ) -> list[TreatmentPlanRead]:
-    service = TreatmentService(TreatmentRepository(session))
+    service = TreatmentService(TreatmentRepository(session), PatientRepository(session))
     return await service.list_plans_for_patient(user.organization_id, patient_id)
 
 
@@ -90,7 +115,7 @@ async def list_treatment_plans(
 async def get_treatment_plan(
     plan_id: uuid.UUID, user: AuthenticatedUser, session: DbSession
 ) -> TreatmentPlanRead:
-    service = TreatmentService(TreatmentRepository(session))
+    service = TreatmentService(TreatmentRepository(session), PatientRepository(session))
     return await service.get_plan(user.organization_id, plan_id)
 
 
@@ -102,8 +127,16 @@ async def get_treatment_plan(
 async def update_treatment_plan(
     plan_id: uuid.UUID, payload: TreatmentPlanUpdate, user: AuthenticatedUser, session: DbSession
 ) -> TreatmentPlanRead:
-    service = TreatmentService(TreatmentRepository(session))
+    service = TreatmentService(TreatmentRepository(session), PatientRepository(session))
     plan = await service.update_plan(user.organization_id, plan_id, payload)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="treatment_plan.updated",
+        resource_type="treatment_plan",
+        resource_id=str(plan.id),
+        metadata={"fields": sorted(payload.model_dump(exclude_unset=True).keys())},
+    )
     await session.commit()
     return plan
 
@@ -112,8 +145,8 @@ async def update_treatment_plan(
 async def list_treatment_sessions(
     plan_id: uuid.UUID, user: AuthenticatedUser, session: DbSession
 ) -> list[TreatmentSessionRead]:
-    repository = TreatmentRepository(session)
-    return await repository.list_sessions_for_plan(plan_id)
+    service = TreatmentService(TreatmentRepository(session), PatientRepository(session))
+    return await service.list_sessions_for_plan(user.organization_id, plan_id)
 
 
 @router.post(
@@ -125,7 +158,15 @@ async def list_treatment_sessions(
 async def record_treatment_session(
     payload: TreatmentSessionCreate, user: AuthenticatedUser, session: DbSession
 ) -> TreatmentSessionRead:
-    service = TreatmentService(TreatmentRepository(session))
+    service = TreatmentService(TreatmentRepository(session), PatientRepository(session))
     treatment_session = await service.record_session(user.organization_id, payload)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="treatment_session.recorded",
+        resource_type="treatment_session",
+        resource_id=str(treatment_session.id),
+        metadata={"treatment_plan_id": str(treatment_session.treatment_plan_id)},
+    )
     await session.commit()
     return treatment_session

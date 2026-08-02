@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 
 from medical_api.api.dependencies import AuthenticatedUser, DbSession
 from medical_api.core.security import require_roles
+from medical_api.modules.audit.service import AuditService
 from medical_api.modules.patients.repository import PatientRepository
 from medical_api.modules.patients.schemas import PatientCreate, PatientRead, PatientUpdate
 from medical_api.modules.patients.service import PatientService
@@ -32,6 +33,13 @@ async def create_patient(
 ) -> PatientRead:
     service = PatientService(PatientRepository(session))
     patient = await service.create(user.organization_id, payload)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="patient.created",
+        resource_type="patient",
+        resource_id=str(patient.id),
+    )
     await session.commit()
     return patient
 
@@ -50,5 +58,13 @@ async def update_patient(
 ) -> PatientRead:
     service = PatientService(PatientRepository(session))
     patient = await service.update(user.organization_id, patient_id, payload)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="patient.updated",
+        resource_type="patient",
+        resource_id=str(patient.id),
+        metadata={"fields": sorted(payload.model_dump(exclude_unset=True).keys())},
+    )
     await session.commit()
     return patient

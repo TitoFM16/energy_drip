@@ -146,6 +146,18 @@ therefore no longer tracked as wholly missing:
   requiring a manual trigger — see "Automated reminder scheduling" above.
   Verified live: it correctly auto-marked a real stale appointment as
   `no_show` on its very first tick.
+- Fixed a real cross-tenant IDOR: clinical notes and treatment sessions
+  had no organization-boundary check at all (only reachable through a
+  parent record's org, which nothing ever joined through), and clinical
+  notes had no role gate either. Also wired `AuditService` into every
+  staff-mutating endpoint (it existed but was never called), added a
+  request-context middleware so audit events capture request
+  ID/IP/user agent without threading `Request` through every service, and
+  fixed a hash-chain ordering bug plus a naive-vs-aware datetime bug that
+  a new authorization/audit test suite caught. All fixes verified live
+  against the running Docker stack with real cross-org tokens — see
+  "Authorization, audit, and security" above for the full list of what's
+  fixed and what's still open.
 
 ## Priority levels
 
@@ -887,35 +899,123 @@ Acceptance criteria:
 
 ## 7. Authorization, audit, and security
 
-### P0: Complete server-side authorization review
+### P0: Complete server-side authorization review — org-scoping and role-gate gaps fixed, permission matrix still informal
 
-Some routes have role checks, but every operation needs an explicit policy.
+Found and fixed two real IDOR-class gaps while reviewing every module's
+mutating and listing endpoints against organization scoping:
 
-Acceptance criteria:
+- `medical_records` (clinical notes) had **no organization scoping at
+  all** — `ClinicalNote` has no `organization_id` column of its own (it's
+  reachable only through the `Patient` it belongs to), and the repository
+  never joined through `Patient` to check it. Any authenticated user from
+  any organization could read, and — worse — finalize (mutate) another
+  organization's clinical notes by patient/note UUID, since role checks
+  don't imply org checks. The list endpoint additionally had **no role
+  dependency at all**, so any authenticated staff member (including
+  reception) could read clinical content. Fixed: repository methods now
+  join `ClinicalNote`/`Patient` and filter on `Patient.organization_id`;
+  `list_clinical_notes` is now gated to
+  `organization_admin`/`medical_director`/`practitioner` (reception
+  barred, per this section's own acceptance criteria); `add_note` verifies
+  the caller-supplied `patient_id` belongs to the caller's org before
+  creating a note.
+- `treatments`: `list_sessions_for_plan` had the same shape of bug
+  (`TreatmentSession` has no `organization_id`, scoped only through its
+  `TreatmentPlan`) — fixed with the same join-through-parent pattern, now
+  also 404s (via `get_plan`) instead of silently returning another org's
+  session list. Additionally, `create_plan` never verified the
+  caller-supplied `patient_id` belonged to the org — fixed so a plan can
+  no longer be created that references a patient outside the org.
+- Live-verified against the real Docker stack with two separate
+  organizations and cross-org tokens: cross-org clinical-note read returns
+  an empty list (not another org's data), cross-org finalize/create both
+  404, reception gets 403 on clinical-note read even for its own org's
+  patient, and the same pattern holds for treatment plans/sessions.
+- Added `apps/api/tests/test_authorization_and_audit.py` with automated
+  cross-tenant isolation tests covering both of the above, plus the
+  audit-trail coverage below.
 
-- Define a permission matrix for every role and resource.
-- Apply organization-boundary checks to all reads and writes.
-- Add record-level rules such as assigned-practitioner access.
-- Ensure reception roles cannot access or modify restricted clinical content.
-- Restrict consent invalidation and eligibility overrides.
-- Add automated authorization and cross-tenant isolation tests.
-- Never depend on React route protection for security.
+Still open from the original acceptance criteria:
 
-### P0: Audit coverage and integrity
+- No formal, centralized permission matrix document/table — role checks
+  are still declared ad hoc per-route via `require_roles(...)`, just
+  audited for correctness this pass rather than replaced with a matrix.
+- No record-level rules beyond organization boundary (e.g.
+  assigned-practitioner-only access to a specific patient's notes) — every
+  staff role in an org can still see every patient/note/plan in that org.
+- Consent invalidation and eligibility-override endpoints don't exist yet
+  at all (no code path to restrict).
+- React route guards were not audited this pass (server-side checks are
+  now correct; the frontend was already known to not be relied on for
+  security, but wasn't specifically re-verified here).
 
-The audit model and basic listing route exist, but audit recording is not yet
-complete across the product.
+### P0: Audit coverage and integrity — now recording, still needs export/retention policy
 
-Acceptance criteria:
+The audit model and listing route existed but nothing ever called
+`AuditService.record(...)` — verified via a full grep across every module
+before this pass; it was dead code. Fixed:
 
-- Record all important patient, clinical, consent, document, appointment,
-  notification, and permission actions.
-- Include actor, organization, resource, timestamp, request ID, trusted IP, user
-  agent, and safe metadata.
-- Keep audit events append-only.
-- Implement and verify the intended previous-hash/event-hash chain.
-- Restrict audit access and export.
-- Define retention and integrity-monitoring policies.
+- Added `AuditService.record(...)` calls to every staff-mutating endpoint:
+  organization registration, invite creation/acceptance, password-reset
+  request/confirm, patient create/update, appointment create/status-change,
+  availability-rule create/delete, practitioner create/update, consent
+  template create/publish, consent request create, consent-form submission
+  (patient-token flow — `actor_user_id` is `None` there since patients
+  don't authenticate as staff), clinical note create/finalize, treatment
+  definition create/update, treatment plan create/update, and treatment
+  session recording.
+- Added `RequestContextMiddleware`
+  (`apps/api/src/medical_api/core/middleware.py` +
+  `core/request_context.py`) so `AuditService.record(...)` picks up
+  `request_id`/`ip_address`/`user_agent` from contextvars automatically
+  instead of every route/service having to thread a `Request` parameter
+  through its whole call chain. Also echoes `X-Request-Id` back on every
+  response (generates one if the caller didn't send one) — verified live
+  that a caller-supplied request ID round-trips into both the response
+  header and the resulting audit row.
+- Found and fixed a real hash-chain integrity bug the new tests caught:
+  `AuditService._last_hash` picked the "previous" event by
+  `ORDER BY occurred_at DESC LIMIT 1`, but Postgres's `now()` is frozen to
+  transaction-start time, not per-statement — any two audit events written
+  in the same transaction got an identical `occurred_at`, making "last"
+  ambiguous. Added a monotonic `sequence` column (`BigInteger`,
+  `Identity(always=True)`) to `AuditEvent` and switched both the chain
+  lookup and the listing route's ordering to it (migration
+  `fbae6f06d123`). This wasn't reachable through today's call sites (each
+  records at most once per request) but would have silently produced an
+  invalid/inconsistent chain the moment two audit events landed in one
+  transaction.
+- Also found and fixed, incidentally, that `ClinicalNote.finalized_at` was
+  mapped as a naive `TIMESTAMP` while the service wrote an aware
+  `datetime.now(UTC)` into it — `finalize_clinical_note` had apparently
+  never been exercised against real Postgres before (it 500s with
+  `asyncpg.exceptions.DataError`, "can't subtract offset-naive and
+  offset-aware datetimes"). Fixed the column to `DateTime(timezone=True)`
+  in the same migration.
+- Live-verified end to end: registered two real organizations through the
+  running API, drove a full patient → clinical-note → finalize sequence,
+  and confirmed via a direct Postgres query that `sequence` is monotonic,
+  every row's `previous_hash` equals the prior row's `event_hash`, and
+  `request_id`/`ip_address` are populated correctly (including the
+  caller-supplied `X-Request-Id` on the last event).
+- Added `apps/api/tests/test_authorization_and_audit.py` tests asserting
+  mutations show up in `GET /api/v1/audit`, that a role without audit
+  access is rejected with 403, and that the hash chain is verifiable
+  end-to-end (calls `AuditService` directly against the same DB
+  transaction the test uses).
+
+Still open from the original acceptance criteria:
+
+- Documents module has no router yet (nothing to audit there until it's
+  built).
+- Notification-preference changes aren't audited — there's no
+  preference-change endpoint yet either (only a read-only notifications
+  list exists).
+- No audit export tooling, and access is still just role-gated
+  (`auditor`/`organization_admin`/`platform_admin`) rather than having a
+  separate restricted export path.
+- No retention or integrity-monitoring policy defined (e.g. periodic
+  full-chain verification, alerting on a broken link).
 
 ### P1: API and application security hardening
 
@@ -1252,7 +1352,13 @@ Acceptance criteria:
     operator task — nothing here is blocked on it, see
     `docs/whatsapp-setup.md`) and template param validation (see
     "Notification automation").
-11. Complete audit coverage and the server authorization review.
+11. ~~Complete audit coverage and the server authorization review.~~ Two
+    real cross-tenant IDOR gaps (clinical notes, treatment sessions) are
+    fixed and covered by automated tests; every mutating endpoint now
+    records an audit event, and the hash chain is verified working end to
+    end (see "Authorization, audit, and security"). Still open: a formal
+    permission matrix, record-level (assigned-practitioner) access rules,
+    audit export tooling, and retention/integrity-monitoring policy.
 12. Connect public booking and finalize landing/legal content.
 13. Add integration and end-to-end test coverage.
 14. Complete production infrastructure, observability, backup, recovery,

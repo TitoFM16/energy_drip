@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Request
 from medical_api.api.dependencies import AuthenticatedUser, DbSession
 from medical_api.core.exceptions import NotFoundError
 from medical_api.core.security import require_roles
+from medical_api.modules.audit.service import AuditService
 from medical_api.modules.consents.repository import ConsentRepository, ConsentTemplateRepository
 from medical_api.modules.consents.schemas import (
     ConsentFormRead,
@@ -37,6 +38,13 @@ async def create_consent_template(
 ) -> ConsentTemplateRead:
     service = ConsentTemplateService(ConsentTemplateRepository(session))
     template = await service.create(user.organization_id, payload)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="consent_template.created",
+        resource_type="consent_template",
+        resource_id=str(template.id),
+    )
     await session.commit()
     return template
 
@@ -59,6 +67,14 @@ async def publish_consent_template_version(
 ) -> ConsentTemplateVersionRead:
     service = ConsentTemplateService(ConsentTemplateRepository(session))
     version = await service.publish_version(user.organization_id, template_id, version_id)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="consent_template_version.published",
+        resource_type="consent_template_version",
+        resource_id=str(version.id),
+        metadata={"template_id": str(template_id)},
+    )
     await session.commit()
     return version
 
@@ -125,6 +141,14 @@ async def create_consent_request(
     service = ConsentService(ConsentRepository(session), session)
     request, raw_token = await service.create_request(
         user.organization_id, patient_id, appointment_id, template_version_id
+    )
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="consent_request.created",
+        resource_type="consent_request",
+        resource_id=str(request.id),
+        metadata={"patient_id": str(patient_id)},
     )
     await session.commit()
     return {"consent_request_id": str(request.id), "token": raw_token}

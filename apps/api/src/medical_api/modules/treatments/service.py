@@ -2,6 +2,7 @@ import uuid
 from datetime import UTC, datetime
 
 from medical_api.core.exceptions import NotFoundError
+from medical_api.modules.patients.repository import PatientRepository
 from medical_api.modules.treatments.models import (
     TreatmentDefinition,
     TreatmentPlan,
@@ -47,12 +48,18 @@ class TreatmentDefinitionService:
 
 
 class TreatmentService:
-    def __init__(self, repository: TreatmentRepository):
+    def __init__(self, repository: TreatmentRepository, patients: PatientRepository):
         self.repository = repository
+        self.patients = patients
 
     async def create_plan(
         self, organization_id: uuid.UUID, data: TreatmentPlanCreate
     ) -> TreatmentPlan:
+        # data.patient_id is caller-supplied — without this check a plan
+        # could be created for a patient in a different organization.
+        patient = await self.patients.get(organization_id, data.patient_id)
+        if patient is None:
+            raise NotFoundError("Patient", data.patient_id)
         plan = TreatmentPlan(organization_id=organization_id, **data.model_dump())
         return await self.repository.create_plan(plan)
 
@@ -81,3 +88,9 @@ class TreatmentService:
         await self.get_plan(organization_id, data.treatment_plan_id)
         session_row = TreatmentSession(performed_at=datetime.now(UTC), **data.model_dump())
         return await self.repository.create_session(session_row)
+
+    async def list_sessions_for_plan(
+        self, organization_id: uuid.UUID, treatment_plan_id: uuid.UUID
+    ) -> list[TreatmentSession]:
+        await self.get_plan(organization_id, treatment_plan_id)
+        return await self.repository.list_sessions_for_plan(organization_id, treatment_plan_id)

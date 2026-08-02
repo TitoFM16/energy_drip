@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from medical_api.core.request_context import get_ip_address, get_request_id, get_user_agent
 from medical_api.modules.audit.models import AuditEvent
 
 
@@ -23,7 +24,7 @@ class AuditService:
         stmt = (
             select(AuditEvent.event_hash)
             .where(AuditEvent.organization_id == organization_id)
-            .order_by(AuditEvent.occurred_at.desc())
+            .order_by(AuditEvent.sequence.desc())
             .limit(1)
         )
         return (await self.session.execute(stmt)).scalar_one_or_none()
@@ -41,6 +42,15 @@ class AuditService:
         user_agent: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> AuditEvent:
+        # Callers on a real HTTP request normally omit request_id/ip_address/
+        # user_agent and let these fall back to the current request's
+        # context (set by RequestContextMiddleware) rather than plumbing
+        # `Request` through every service call chain. Explicit values still
+        # win — the consent public-submission flow already computes
+        # ip_address/user_agent itself.
+        request_id = request_id or get_request_id()
+        ip_address = ip_address or get_ip_address()
+        user_agent = user_agent or get_user_agent()
         previous_hash = await self._last_hash(organization_id)
         payload = {
             "organization_id": str(organization_id),

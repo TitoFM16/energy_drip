@@ -63,6 +63,6 @@ class ClinicalNote(Base, UUIDPrimaryKeyMixin):
     appointment_id: Mapped[uuid.UUID | None]
     content: Mapped[str]
     is_finalized: Mapped[bool] = mapped_column(default=False)
-    finalized_at: Mapped[datetime | None]
+    finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     amends_note_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("clinical_notes.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

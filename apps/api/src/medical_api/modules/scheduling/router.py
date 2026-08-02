@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 
 from medical_api.api.dependencies import AuthenticatedUser, DbSession
 from medical_api.core.security import require_roles
+from medical_api.modules.audit.service import AuditService
 from medical_api.modules.identity.repository import UserRepository
 from medical_api.modules.scheduling.repository import (
     AppointmentRepository,
@@ -57,6 +58,14 @@ async def create_appointment(
 ) -> AppointmentRead:
     service = AppointmentService(AppointmentRepository(session), session)
     appointment = await service.schedule(user.organization_id, payload)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="appointment.created",
+        resource_type="appointment",
+        resource_id=str(appointment.id),
+        metadata={"patient_id": str(appointment.patient_id)},
+    )
     await session.commit()
     return appointment
 
@@ -71,6 +80,14 @@ async def update_appointment_status(
     service = AppointmentService(AppointmentRepository(session), session)
     appointment = await service.change_status(
         user.organization_id, appointment_id, payload.status, payload.reason
+    )
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="appointment.status_changed",
+        resource_type="appointment",
+        resource_id=str(appointment.id),
+        metadata={"status": str(payload.status), "reason": payload.reason},
     )
     await session.commit()
     return appointment
@@ -102,6 +119,14 @@ async def create_availability_rule(
 ) -> AvailabilityRuleRead:
     service = AvailabilityService(AvailabilityRepository(session), AppointmentRepository(session))
     rule = await service.create_rule(user.organization_id, payload)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="availability_rule.created",
+        resource_type="availability_rule",
+        resource_id=str(rule.id),
+        metadata={"practitioner_id": str(rule.practitioner_id)},
+    )
     await session.commit()
     return rule
 
@@ -124,6 +149,13 @@ async def delete_availability_rule(
 ) -> None:
     service = AvailabilityService(AvailabilityRepository(session), AppointmentRepository(session))
     await service.delete_rule(user.organization_id, rule_id)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="availability_rule.deleted",
+        resource_type="availability_rule",
+        resource_id=str(rule_id),
+    )
     await session.commit()
 
 
@@ -138,6 +170,13 @@ async def create_practitioner(
 ) -> PractitionerRead:
     service = PractitionerService(PractitionerRepository(session), UserRepository(session))
     practitioner = await service.create(user.organization_id, payload)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="practitioner.created",
+        resource_type="practitioner",
+        resource_id=str(practitioner.id),
+    )
     await session.commit()
     return practitioner
 
@@ -163,5 +202,13 @@ async def update_practitioner(
 ) -> PractitionerRead:
     service = PractitionerService(PractitionerRepository(session), UserRepository(session))
     practitioner = await service.update(user.organization_id, practitioner_id, payload)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="practitioner.updated",
+        resource_type="practitioner",
+        resource_id=str(practitioner.id),
+        metadata={"fields": sorted(payload.model_dump(exclude_unset=True).keys())},
+    )
     await session.commit()
     return practitioner

@@ -7,6 +7,7 @@ from medical_api.api.error_handlers import register_error_handlers
 from medical_api.api.router import api_router
 from medical_api.core.config import get_settings
 from medical_api.core.logging import configure_logging
+from medical_api.core.middleware import RequestContextMiddleware
 from medical_api.integrations.object_storage.client import ensure_bucket_exists
 
 settings = get_settings()
@@ -34,6 +35,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Populates request_id/ip/user_agent for AuditService; added after
+# CORSMiddleware so CORS stays outermost and still handles preflight OPTIONS.
+app.add_middleware(RequestContextMiddleware)
 
 register_error_handlers(app)
 app.include_router(api_router)

@@ -63,10 +63,18 @@ class TreatmentRepository:
         await self.session.flush()
         return plan
 
-    async def list_sessions_for_plan(self, treatment_plan_id: uuid.UUID) -> list[TreatmentSession]:
+    async def list_sessions_for_plan(
+        self, organization_id: uuid.UUID, treatment_plan_id: uuid.UUID
+    ) -> list[TreatmentSession]:
+        # TreatmentSession has no organization_id of its own — scoped
+        # through the plan it belongs to, so the org check has to join.
         stmt = (
             select(TreatmentSession)
-            .where(TreatmentSession.treatment_plan_id == treatment_plan_id)
+            .join(TreatmentPlan, TreatmentPlan.id == TreatmentSession.treatment_plan_id)
+            .where(
+                TreatmentSession.treatment_plan_id == treatment_plan_id,
+                TreatmentPlan.organization_id == organization_id,
+            )
             .order_by(TreatmentSession.session_number)
         )
         return list((await self.session.execute(stmt)).scalars().all())

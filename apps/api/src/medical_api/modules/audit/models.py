@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, String, func
+from sqlalchemy import JSON, BigInteger, DateTime, Identity, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from medical_api.core.database import Base, OrganizationScopedMixin, UUIDPrimaryKeyMixin
@@ -11,6 +11,13 @@ from medical_api.core.database import Base, OrganizationScopedMixin, UUIDPrimary
 class AuditEvent(Base, UUIDPrimaryKeyMixin, OrganizationScopedMixin):
     __tablename__ = "audit_events"
 
+    # `occurred_at` alone isn't a reliable ordering key: within a single DB
+    # transaction, Postgres's now() is frozen to the transaction's start
+    # time, so multiple events written in one transaction can share an
+    # identical occurred_at. The hash chain's previous-event lookup (and
+    # the listing route's ordering) need a strictly monotonic key instead —
+    # `id` doesn't work either since it's a random UUID, not time-ordered.
+    sequence: Mapped[int] = mapped_column(BigInteger, Identity(always=True), unique=True)
     actor_user_id: Mapped[uuid.UUID | None]
     action: Mapped[str] = mapped_column(String(100), index=True)
     resource_type: Mapped[str] = mapped_column(String(100))

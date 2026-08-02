@@ -16,7 +16,7 @@ async def list_audit_events(user: AuthenticatedUser, session: DbSession) -> list
     stmt = (
         select(AuditEvent)
         .where(AuditEvent.organization_id == user.organization_id)
-        .order_by(AuditEvent.occurred_at.desc())
+        .order_by(AuditEvent.sequence.desc())
         .limit(100)
     )
     return list((await session.execute(stmt)).scalars().all())

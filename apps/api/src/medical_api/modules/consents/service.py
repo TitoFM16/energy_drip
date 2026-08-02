@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from medical_api.core.exceptions import ConflictError, NotFoundError
 from medical_api.integrations.object_storage.client import upload_bytes
+from medical_api.modules.audit.service import AuditService
 from medical_api.modules.consents.models import (
     ConsentAnswer,
     ConsentEvent,
@@ -217,6 +218,18 @@ class ConsentService:
             organization_id=request.organization_id,
             event_type="consent.submitted",
             payload={"consent_request_id": str(request.id), "submission_id": str(submission.id)},
+        )
+        # No actor_user_id — the patient authenticates via the single-use
+        # token, not a staff session.
+        await AuditService(self.session).record(
+            organization_id=request.organization_id,
+            actor_user_id=None,
+            action="consent_request.submitted",
+            resource_type="consent_request",
+            resource_id=str(request.id),
+            ip_address=ip_address,
+            user_agent=user_agent,
+            metadata={"eligibility_result": submission.eligibility_result},
         )
         return submission
 
