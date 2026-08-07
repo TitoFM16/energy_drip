@@ -45,6 +45,8 @@ export interface ClinicFixture {
   adminEmail: string;
   adminPassword: string;
   adminToken: string;
+  practitionerEmail: string;
+  practitionerPassword: string;
   practitionerToken: string;
   practitionerUserId: string;
   practitionerId: string;
@@ -74,6 +76,7 @@ export async function bootstrapClinic(): Promise<ClinicFixture> {
   const adminToken = org.access_token;
 
   const practitionerEmail = `${unique('practitioner')}@example.com`;
+  const practitionerPassword = 'e2e-supersecret123';
   const inviteBody: Schemas['InviteCreate'] = {
     email: practitionerEmail,
     role: 'practitioner',
@@ -85,7 +88,7 @@ export async function bootstrapClinic(): Promise<ClinicFixture> {
   });
   const acceptBody: Schemas['InviteAcceptRequest'] = {
     full_name: 'E2E Practitioner',
-    password: 'e2e-supersecret123',
+    password: practitionerPassword,
   };
   const practitionerAuth = await api<Schemas['TokenResponse']>(
     `/api/v1/auth/invites/${invite.token}/accept`,
@@ -164,6 +167,8 @@ export async function bootstrapClinic(): Promise<ClinicFixture> {
     adminEmail,
     adminPassword,
     adminToken,
+    practitionerEmail,
+    practitionerPassword,
     practitionerToken,
     practitionerUserId,
     practitionerId: practitioner.id,
