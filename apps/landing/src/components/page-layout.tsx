@@ -1,11 +1,13 @@
 import type { ReactNode } from 'react';
 import { Outlet } from 'react-router-dom';
+import { SeoHead } from '../seo/seo-head';
 import { Footer } from './footer';
 import { NavBar } from './nav-bar';
 
 export function PageLayout() {
   return (
     <div className="site-shell">
+      <SeoHead />
       <NavBar />
       <main className="flex-1">
         <Outlet />
