@@ -5,6 +5,7 @@ import { usePatient } from '../../features/patients/use-patient';
 import { useUpdatePatient } from '../../features/patients/use-update-patient';
 import { PageHeading } from '../../shared/components/app-shell';
 import { ConsentRequestsSection } from './consent-requests-section';
+import { MedicalRecordSection } from './medical-record-section';
 import { TreatmentPlansSection } from './treatment-plans-section';
 
 export function PatientDetailPage() {
@@ -111,6 +112,7 @@ export function PatientDetailPage() {
         </div>
       </form>
 
+      <MedicalRecordSection patientId={patient.id} />
       <TreatmentPlansSection patientId={patient.id} />
       <ConsentRequestsSection patientId={patient.id} />
     </div>

@@ -228,18 +228,26 @@ therefore no longer tracked as wholly missing:
   design-tokens CSS files remain unused since neither app reads CSS custom
   properties).
 - Added `apps/e2e`: Playwright end-to-end tests against the real
-  `docker compose up` stack, wired into CI as a third job. 5 flows covered
+  `docker compose up` stack, wired into CI as a third job. 6 flows covered
   (staff login → appointment booking, the full cross-app patient consent
   flow, the public booking form, patient creation as its own
-  assertion-bearing test, and treatment-plan creation + session recording
-  under the `practitioner` role) — verified these actually catch
-  regressions, not just that they pass, by deliberately breaking a button
-  and watching the suite fail before reverting, for both the original
-  appointment-booking test and the new treatment-plan/session test. See
-  "End-to-end tests" above for the full list of what's covered vs. still
-  open, and two real environment gotchas (slot-grid alignment near
-  day-end, the booking rate-limiter applying to repeated local test runs)
-  worth knowing about before extending this suite.
+  assertion-bearing test, treatment-plan creation + session recording
+  under the `practitioner` role, and the medical-record flows below) —
+  verified these actually catch regressions, not just that they pass, by
+  deliberately breaking a button and watching the suite fail before
+  reverting, for the appointment-booking, treatment-plan/session, and
+  medical-record tests. See "End-to-end tests" above for the full list of
+  what's covered vs. still open, and two real environment gotchas
+  (slot-grid alignment near day-end, the booking rate-limiter applying to
+  repeated local test runs) worth knowing about before extending this
+  suite.
+- Closed "Complete medical-record API": built org-scoped, role-gated,
+  audited APIs for medical history (append-only with finalize/amend, like
+  `ClinicalNote`), allergies, conditions, and medications (update +
+  deactivate/reactivate, like the treatment catalogue's active/inactive
+  toggle), plus a `MedicalRecordSection` on the patient detail page in
+  staff-web and an E2E test. See "Complete medical-record API" below for
+  the full writeup.
 
 ## Priority levels
 
@@ -415,19 +423,60 @@ Remaining acceptance criteria:
 - Server-side authorization for every record and action.
 - Audit patient views and modifications.
 
-### P1: Complete medical-record API
+### P1: Complete medical-record API — done
 
-Clinical-note endpoints exist, but the remainder of the medical-history models
-do not yet have complete APIs and services.
+The four remaining medical-history models (`PatientMedicalHistory`,
+`PatientAllergy`, `PatientCondition`, `PatientMedication` —
+`apps/api/src/medical_api/modules/medical_records/models.py`) already had
+migrations from the initial schema but no API layer at all. Built
+following the same org-scoped, join-through-`Patient` pattern the
+"Complete server-side authorization review" pass established for
+`ClinicalNote` and `TreatmentSession`:
 
-Acceptance criteria:
+- **Medical history** behaves like `ClinicalNote`: append-only, with
+  `author_user_id`/`is_finalized`/`finalized_at`/`amends_entry_id` added
+  via migration `12431a907aea`. `POST /patients/medical-history` creates
+  a draft entry; `POST /patients/medical-history/{id}/finalize` is
+  one-way (a second finalize 409s); correcting a finalized entry never
+  edits it in place — a new entry is created referencing the original via
+  `amends_entry_id`, and the amended entry must belong to the same
+  patient/org or the request 404s.
+- **Allergies and conditions** are simple structured facts, not clinical
+  notes — they support in-place `PATCH` updates and an `is_active`
+  deactivate/reactivate toggle (same migration), rather than
+  append-only/amendment semantics. **Medications** already had
+  `is_current` from the initial schema, toggled the same way.
+- Every mutating endpoint is role-gated the same as clinical notes
+  (`practitioner`/`medical_director` to write, `organization_admin` added
+  for read) and calls `AuditService.record(...)` — verified live against
+  the real API that `allergy.created`, `medical_history_entry.finalized`,
+  etc. all show up in `GET /api/v1/audit`.
+- `apps/api/tests/test_medical_records.py` (8 tests) covers org-scoping
+  and role-gating for all four resources (parametrized), the
+  allergy update/deactivate flow, the medication current/discontinued
+  toggle, the medical-history finalize-is-one-way behavior, the full
+  amendment flow (including rejecting an `amends_entry_id` that belongs
+  to a different patient), and audit-trail coverage.
+- staff-web: new `apps/staff-web/src/features/patient-record/` hooks and
+  a `MedicalRecordSection` on the patient detail page
+  (`apps/staff-web/src/routes/patients/medical-record-section.tsx`) with
+  inline forms for all four resources, wired into
+  `apps/staff-web/src/routes/patients/detail.tsx`. Manually verified in a
+  real browser end to end (create/finalize/correct a history entry,
+  create/deactivate an allergy, create a condition, create/suspend a
+  medication) — all four sections persist correctly across a full page
+  reload, confirming real backend persistence rather than optimistic-only
+  UI state.
+- `apps/e2e/tests/medical-record.spec.ts` exercises the same flow through
+  the real UI as the practitioner role (organization_admin alone can't
+  write these either, same boundary as treatment plans) — verified it
+  actually catches regressions by disabling the "Finalizar" button and
+  watching the test fail with a precise timeout before reverting.
 
-- APIs for medical history, allergies, conditions, and medications.
-- Organization and record-level authorization in every operation.
-- Append-oriented clinical entries with explicit correction or amendment flows.
-- Finalized records cannot be silently overwritten.
-- Record authorship, timestamps, and finalization state are preserved.
-- Sensitive medical content is excluded from ordinary application logs.
+Sensitive medical content (note bodies, allergy/condition/medication
+details) is still excluded from application logs only by convention, same
+as `ClinicalNote` — no field-level redaction is enforced structurally
+anywhere in the codebase yet.
 
 ### P1: Treatment catalogue, plans, and session workflow — core loop done
 
@@ -1480,7 +1529,7 @@ Acceptance criteria:
 - Test PDF creation, hashing, and document records.
 - Test notification retries and callback idempotency.
 
-### P1: End-to-end tests — Playwright framework chosen and wired into CI; 5 of 7 flows covered
+### P1: End-to-end tests — Playwright framework chosen and wired into CI; 6 of 7 flows covered
 
 Chose Playwright over Cypress: better multi-origin/multi-context support in
 one test (this product's most valuable flows genuinely span two separate
@@ -1499,7 +1548,7 @@ shapes — no dependency on `make seed` or any other test's data, avoiding
 the same shared-dev-database pollution problem `test_auth_flows.py` hit
 earlier (see "Backend integration tests").
 
-Covers 5 flows so far:
+Covers 6 flows so far:
 
 - Staff logs in **through the real login form** (not a token injected into
   storage), books an available slot for a patient, confirms it lands on
@@ -1521,6 +1570,12 @@ Covers 5 flows so far:
   than working around) creates a treatment plan for a patient, then
   records a session against it with clinical evolution notes, confirming
   both the plan and the session actually persisted.
+- A practitioner records a full medical-record flow for a patient:
+  creates a medical-history entry, finalizes it, then corrects it (the
+  correction shows up as a separate new entry, the original stays
+  untouched and still finalized); creates and deactivates an allergy;
+  creates a condition; creates a medication and marks it no longer
+  current.
 
 Wired into `.github/workflows/ci.yml` as a third job: brings up the full
 Docker Compose stack, waits on `/health/ready` plus each frontend's own
@@ -1532,8 +1587,9 @@ pass**: deliberately hardcoded the "Confirmar cita" button to
 `disabled` in `booking-panel.tsx`, re-ran the appointment-booking test,
 watched it fail with a precise error (button not enabled, 30s timeout),
 reverted, watched it pass again — repeated the same drill for the
-treatment-plan/session test against the "Registrar sesión" button when it
-was added. Also hit two real environment issues
+treatment-plan/session test against the "Registrar sesión" button, and
+for the medical-record test against the "Finalizar" button. Also hit two
+real environment issues
 while building this that are worth knowing about if these start flaking:
 availability-rule time windows are interpreted as UTC and slots are
 generated on a grid aligned to the rule's `start_time` — a narrow window
@@ -1550,10 +1606,10 @@ which also clears dramatiq's queue state in the same Redis instance).
 Acceptance criteria:
 
 - ~~Staff login through appointment creation.~~ Done.
-- ~~Patient creation~~ and medical-history update. Patient creation is now
-  its own assertion-bearing test (not just setup for other flows) — see
-  above; medical-history update isn't covered (the underlying feature
-  itself is still incomplete — see "Complete medical-record API").
+- ~~Patient creation and medical-history update.~~ Done — patient creation
+  is its own assertion-bearing test (not just setup for other flows), and
+  the medical-record test above covers medical-history create, finalize,
+  and correct.
 - ~~Treatment-plan and session recording.~~ Done — see above.
 - ~~Appointment-to-consent delivery.~~ Partially — the consent flow test
   covers request creation through patient completion; it doesn't cover
