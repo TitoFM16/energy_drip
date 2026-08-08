@@ -304,6 +304,20 @@ UPDATE`) so a concurrent double-submission of the same token is
   single-threaded event loop forever, since the slot-computation loop
   never advanced; fixed by bounding the query parameter. See "Appointment
   management" below for the full writeup.
+- Closed the login/invite/password-reset slice of "API and application
+  security hardening": those four endpoints are now IP-rate-limited.
+  Tuning login's limit surfaced a real environment finding — every E2E
+  spec does a real UI login, so an initial limit of 10/5min was already
+  too tight for one clean suite run; raised to 30/5min after verifying
+  two full E2E runs back-to-back. Also added an autouse pytest fixture so
+  the new limits don't spuriously fail unrelated tests that share one fake
+  IP under httpx's ASGITransport. See "API and application security
+  hardening" below for the full writeup.
+- Fixed a CI-only e2e flake: `document-verification.spec.ts` started
+  failing on `main` right after the 10th e2e test was added — the
+  readiness wait never confirmed either worker process had started before
+  running tests. See the "End-to-end tests" section's environment-issues
+  note for the full writeup.
 
 ## Priority levels
 
@@ -1677,11 +1691,47 @@ Still open from the original acceptance criteria:
 
 ### P1: API and application security hardening
 
-Acceptance criteria:
+`POST /auth/login`, `POST /auth/invites/{token}/accept`,
+`POST /auth/password-reset/request`, and `POST /auth/password-reset/confirm`
+are now IP-rate-limited via the same `check_rate_limit` fixed-window helper
+the public booking form already used (`core/rate_limit.py`) — a per-IP soft
+limit, not per-account lockout, so a shared-office IP can't get one bad
+actor's guessing locked out along with everyone else. Login's limit needed
+real tuning, not a guess: every Playwright E2E spec logs in through the real
+form (not a token injected into storage), so a single full suite run alone
+is ~10 real logins from one IP, and CI retries a failed spec once — an
+initial limit of 10/5min was already failing a clean run before any real
+attacker was involved. Raised to 30/5min after verifying two full E2E runs
+back-to-back (20 real logins within about a minute) both pass cleanly.
+
+Also had to add an autouse `_bypass_rate_limiting` fixture to
+`apps/api/tests/conftest.py`: httpx's `ASGITransport` gives every pytest
+test the same fake client IP (127.0.0.1), and unlike the database (rolled
+back via savepoint per test), Redis rate-limit counters aren't reset
+between tests — ordinary setup that calls a newly-rate-limited endpoint
+across dozens of unrelated test files (e.g. accepting an invite once per
+test) was tripping the real limit and failing with a spurious 429. The
+fixture patches `check_rate_limit` to always allow by default; the tests
+that specifically exercise rate limiting
+(`test_auth_rate_limiting.py`, `test_booking.py`'s existing
+`test_rate_limit_allows_up_to_the_limit_then_blocks`) override it back
+within their own test body.
+
+Verified: 4 new pytest cases in `apps/api/tests/test_auth_rate_limiting.py`
+(one per endpoint, via monkeypatching `check_rate_limit` to prove the
+router is actually wired to a 429 rather than repeating real calls against
+shared Redis state); live curl against the running `docker compose` stack
+confirmed 10 real bad logins succeed as 401 and the 11th (pre-retune) /
+31st (post-retune) returns 429; two full Playwright E2E runs back-to-back
+passed cleanly after the retune.
+
+Remaining acceptance criteria:
 
 - Production secret management and rotation.
 - Strong password policy and administrator recovery.
-- Rate limiting for login, consent links, webhooks, and public booking.
+- Rate limiting for consent links and webhooks (public booking and the auth
+  endpoints above are done; the public consent-form token lookup and
+  submission endpoints, and the WhatsApp webhook, still have none).
 - Secure CORS and trusted-host configuration per environment.
 - Security headers and HTTPS-only production cookies or tokens.
 - Input-size limits and upload validation.

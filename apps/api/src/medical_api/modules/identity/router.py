@@ -5,6 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from medical_api.api.dependencies import AuthenticatedUser, DbSession
 from medical_api.core.config import get_settings
+from medical_api.core.exceptions import RateLimitedError
+from medical_api.core.rate_limit import check_rate_limit
+from medical_api.core.request_context import get_ip_address
 from medical_api.core.security import require_roles
 from medical_api.modules.identity.repository import (
     InviteRepository,
@@ -32,6 +35,36 @@ from medical_api.modules.identity.service import AuthService
 
 router = APIRouter()
 settings = get_settings()
+
+# All four keyed by IP, same fixed-window approach as the public booking
+# form (see check_rate_limit's docstring) — these are the other endpoints
+# an unauthenticated caller can hammer to brute-force a password or guess a
+# single-use token. Limits are generous enough that a real user mistyping a
+# password or clicking a stale link a few times never notices, but tight
+# enough to slow down automated guessing.
+#
+# Login's limit specifically had to be raised from an initial, tighter 10 —
+# every E2E spec logs in through the real form (not a token injected into
+# storage), so a full suite run alone is ~10 real logins from the one
+# runner IP, and CI retries a failed spec once (playwright.config.ts). A
+# small shared-office clinic behind one NAT'd IP has the same shape of
+# problem in production. This is a per-IP soft limit, not per-account
+# lockout — meaningfully slows automated guessing without risking a whole
+# office (or a CI run) getting locked out by ordinary concurrent use.
+_LOGIN_RATE_LIMIT = 30
+_LOGIN_RATE_WINDOW_SECONDS = 300
+_INVITE_ACCEPT_RATE_LIMIT = 20
+_INVITE_ACCEPT_RATE_WINDOW_SECONDS = 3600
+_PASSWORD_RESET_REQUEST_RATE_LIMIT = 5
+_PASSWORD_RESET_REQUEST_RATE_WINDOW_SECONDS = 3600
+_PASSWORD_RESET_CONFIRM_RATE_LIMIT = 20
+_PASSWORD_RESET_CONFIRM_RATE_WINDOW_SECONDS = 3600
+
+
+async def _enforce_rate_limit(key: str, *, limit: int, window_seconds: int) -> None:
+    allowed = await check_rate_limit(key, limit=limit, window_seconds=window_seconds)
+    if not allowed:
+        raise RateLimitedError("Too many attempts. Please try again later.")
 
 
 def _build_service(session: AsyncSession) -> AuthService:
@@ -73,6 +106,11 @@ async def register_organization(
 
 @router.post("/login", response_model=TokenResponse)
 async def login(payload: LoginRequest, session: DbSession) -> TokenResponse:
+    await _enforce_rate_limit(
+        f"login:{get_ip_address() or 'unknown'}",
+        limit=_LOGIN_RATE_LIMIT,
+        window_seconds=_LOGIN_RATE_WINDOW_SECONDS,
+    )
     service = _build_service(session)
     tokens = await service.login(payload.email, payload.password)
     await session.commit()
@@ -179,6 +217,11 @@ async def create_invite(
 async def accept_invite(
     token: str, payload: InviteAcceptRequest, session: DbSession
 ) -> TokenResponse:
+    await _enforce_rate_limit(
+        f"invite_accept:{get_ip_address() or 'unknown'}",
+        limit=_INVITE_ACCEPT_RATE_LIMIT,
+        window_seconds=_INVITE_ACCEPT_RATE_WINDOW_SECONDS,
+    )
     service = _build_service(session)
     tokens = await service.accept_invite(token, payload.full_name, payload.password)
     await session.commit()
@@ -189,6 +232,11 @@ async def accept_invite(
 async def request_password_reset(
     payload: PasswordResetRequest, session: DbSession
 ) -> PasswordResetRequestResponse:
+    await _enforce_rate_limit(
+        f"password_reset_request:{get_ip_address() or 'unknown'}",
+        limit=_PASSWORD_RESET_REQUEST_RATE_LIMIT,
+        window_seconds=_PASSWORD_RESET_REQUEST_RATE_WINDOW_SECONDS,
+    )
     service = _build_service(session)
     raw_token = await service.request_password_reset(payload.email)
     await session.commit()
@@ -201,6 +249,11 @@ async def request_password_reset(
 
 @router.post("/password-reset/confirm", status_code=204)
 async def confirm_password_reset(payload: PasswordResetConfirm, session: DbSession) -> None:
+    await _enforce_rate_limit(
+        f"password_reset_confirm:{get_ip_address() or 'unknown'}",
+        limit=_PASSWORD_RESET_CONFIRM_RATE_LIMIT,
+        window_seconds=_PASSWORD_RESET_CONFIRM_RATE_WINDOW_SECONDS,
+    )
     service = _build_service(session)
     await service.reset_password(payload.token, payload.new_password)
     await session.commit()
