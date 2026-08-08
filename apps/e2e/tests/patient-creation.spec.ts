@@ -30,8 +30,10 @@ test('staff creates a new patient through the real form and finds them in the li
   await expect(page.getByText('+573015558899')).toBeVisible();
 
   // Follow through to the detail page and confirm the document number
-  // (not shown in the list) actually saved correctly too.
+  // (not shown in the list) actually saved correctly too — it's an
+  // editable field on the detail page, not read-only text, so its value
+  // has to be checked on the input itself.
   await page.getByText('Mariana Gómez Vélez').click();
   await expect(page.getByRole('heading', { name: 'Mariana Gómez Vélez' })).toBeVisible();
-  await expect(page.getByText('CC1029384756')).toBeVisible();
+  await expect(page.getByLabel('Documento')).toHaveValue('CC1029384756');
 });

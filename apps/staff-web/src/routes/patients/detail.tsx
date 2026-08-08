@@ -6,6 +6,7 @@ import { useUpdatePatient } from '../../features/patients/use-update-patient';
 import { PageHeading } from '../../shared/components/app-shell';
 import { CommunicationPreferencesSection } from './communication-preferences-section';
 import { ConsentRequestsSection } from './consent-requests-section';
+import { ContactsSection } from './contacts-section';
 import { MedicalRecordSection } from './medical-record-section';
 import { TreatmentPlansSection } from './treatment-plans-section';
 
@@ -16,6 +17,8 @@ export function PatientDetailPage() {
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [documentId, setDocumentId] = useState('');
+  const [dateOfBirth, setDateOfBirth] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
 
@@ -23,6 +26,8 @@ export function PatientDetailPage() {
     if (patient) {
       setFirstName(patient.first_name);
       setLastName(patient.last_name);
+      setDocumentId(patient.document_id ?? '');
+      setDateOfBirth(patient.date_of_birth ?? '');
       setPhone(patient.phone_number ?? '');
       setEmail(patient.email ?? '');
     }
@@ -38,6 +43,8 @@ export function PatientDetailPage() {
       patientId: patient!.id,
       first_name: firstName,
       last_name: lastName,
+      document_id: documentId || undefined,
+      date_of_birth: dateOfBirth || undefined,
       phone_number: phone || undefined,
       email: email || undefined,
     });
@@ -51,17 +58,6 @@ export function PatientDetailPage() {
       <PageHeading>
         {patient.first_name} {patient.last_name}
       </PageHeading>
-
-      <div className="mb-6 grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-white p-4 text-sm sm:grid-cols-2">
-        <div>
-          <p className="text-slate-500">Documento</p>
-          <p className="text-slate-900">{patient.document_id ?? '—'}</p>
-        </div>
-        <div>
-          <p className="text-slate-500">Fecha de nacimiento</p>
-          <p className="text-slate-900">{patient.date_of_birth ?? '—'}</p>
-        </div>
-      </div>
 
       <form
         onSubmit={handleSave}
@@ -80,6 +76,18 @@ export function PatientDetailPage() {
           required
           value={lastName}
           onChange={(e) => setLastName(e.target.value)}
+        />
+        <TextField
+          label="Documento"
+          type="text"
+          value={documentId}
+          onChange={(e) => setDocumentId(e.target.value)}
+        />
+        <TextField
+          label="Fecha de nacimiento"
+          type="date"
+          value={dateOfBirth}
+          onChange={(e) => setDateOfBirth(e.target.value)}
         />
         <TextField
           label="Teléfono"
@@ -114,6 +122,7 @@ export function PatientDetailPage() {
       </form>
 
       <CommunicationPreferencesSection patientId={patient.id} />
+      <ContactsSection patientId={patient.id} />
       <MedicalRecordSection patientId={patient.id} />
       <TreatmentPlansSection patientId={patient.id} />
       <ConsentRequestsSection patientId={patient.id} />

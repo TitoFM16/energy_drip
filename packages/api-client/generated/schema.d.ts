@@ -715,6 +715,76 @@ export interface paths {
         patch: operations["update_condition_api_v1_patients_conditions__condition_id__patch"];
         trace?: never;
     };
+    "/api/v1/patients/contacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Patient Contact */
+        post: operations["create_patient_contact_api_v1_patients_contacts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/patients/contacts/{contact_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Patient Contact */
+        delete: operations["delete_patient_contact_api_v1_patients_contacts__contact_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Patient Contact */
+        patch: operations["update_patient_contact_api_v1_patients_contacts__contact_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/patients/emergency-contacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Emergency Contact */
+        post: operations["create_emergency_contact_api_v1_patients_emergency_contacts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/patients/emergency-contacts/{contact_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Emergency Contact */
+        delete: operations["delete_emergency_contact_api_v1_patients_emergency_contacts__contact_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Emergency Contact */
+        patch: operations["update_emergency_contact_api_v1_patients_emergency_contacts__contact_id__patch"];
+        trace?: never;
+    };
     "/api/v1/patients/medical-history": {
         parameters: {
             query?: never;
@@ -862,6 +932,40 @@ export interface paths {
         };
         /** List Conditions */
         get: operations["list_conditions_api_v1_patients__patient_id__conditions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/patients/{patient_id}/contacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Patient Contacts */
+        get: operations["list_patient_contacts_api_v1_patients__patient_id__contacts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/patients/{patient_id}/emergency-contacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Emergency Contacts */
+        get: operations["list_emergency_contacts_api_v1_patients__patient_id__emergency_contacts_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1938,6 +2042,48 @@ export interface components {
          * @enum {string}
          */
         EligibilityResult: "eligible" | "requires_manual_review" | "not_eligible";
+        /** EmergencyContactCreate */
+        EmergencyContactCreate: {
+            /** Full Name */
+            full_name: string;
+            /**
+             * Patient Id
+             * Format: uuid
+             */
+            patient_id: string;
+            /** Phone Number */
+            phone_number: string;
+            /** Relationship */
+            relationship?: string | null;
+        };
+        /** EmergencyContactRead */
+        EmergencyContactRead: {
+            /** Full Name */
+            full_name: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Patient Id
+             * Format: uuid
+             */
+            patient_id: string;
+            /** Phone Number */
+            phone_number: string;
+            /** Relationship */
+            relationship: string | null;
+        };
+        /** EmergencyContactUpdate */
+        EmergencyContactUpdate: {
+            /** Full Name */
+            full_name?: string | null;
+            /** Phone Number */
+            phone_number?: string | null;
+            /** Relationship */
+            relationship?: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -2156,6 +2302,48 @@ export interface components {
             /** Whatsapp Opt Out */
             whatsapp_opt_out: boolean;
         };
+        /** PatientContactCreate */
+        PatientContactCreate: {
+            /** Email */
+            email?: string | null;
+            /** Label */
+            label: string;
+            /**
+             * Patient Id
+             * Format: uuid
+             */
+            patient_id: string;
+            /** Phone Number */
+            phone_number?: string | null;
+        };
+        /** PatientContactRead */
+        PatientContactRead: {
+            /** Email */
+            email: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Label */
+            label: string;
+            /**
+             * Patient Id
+             * Format: uuid
+             */
+            patient_id: string;
+            /** Phone Number */
+            phone_number: string | null;
+        };
+        /** PatientContactUpdate */
+        PatientContactUpdate: {
+            /** Email */
+            email?: string | null;
+            /** Label */
+            label?: string | null;
+            /** Phone Number */
+            phone_number?: string | null;
+        };
         /** PatientCreate */
         PatientCreate: {
             /** Date Of Birth */
@@ -2206,6 +2394,10 @@ export interface components {
         };
         /** PatientUpdate */
         PatientUpdate: {
+            /** Date Of Birth */
+            date_of_birth?: string | null;
+            /** Document Id */
+            document_id?: string | null;
             /** Email */
             email?: string | null;
             /** First Name */
@@ -3914,6 +4106,200 @@ export interface operations {
             };
         };
     };
+    create_patient_contact_api_v1_patients_contacts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatientContactCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatientContactRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_patient_contact_api_v1_patients_contacts__contact_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                contact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_patient_contact_api_v1_patients_contacts__contact_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                contact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatientContactUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatientContactRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_emergency_contact_api_v1_patients_emergency_contacts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmergencyContactCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmergencyContactRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_emergency_contact_api_v1_patients_emergency_contacts__contact_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                contact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_emergency_contact_api_v1_patients_emergency_contacts__contact_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                contact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmergencyContactUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmergencyContactRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_medical_history_entry_api_v1_patients_medical_history_post: {
         parameters: {
             query?: never;
@@ -4258,6 +4644,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConditionRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_patient_contacts_api_v1_patients__patient_id__contacts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                patient_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatientContactRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_emergency_contacts_api_v1_patients__patient_id__emergency_contacts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                patient_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmergencyContactRead"][];
                 };
             };
             /** @description Validation Error */

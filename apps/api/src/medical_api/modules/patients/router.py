@@ -5,15 +5,29 @@ from fastapi import APIRouter, Depends
 from medical_api.api.dependencies import AuthenticatedUser, DbSession
 from medical_api.core.security import require_roles
 from medical_api.modules.audit.service import AuditService
-from medical_api.modules.patients.repository import PatientRepository
+from medical_api.modules.patients.repository import (
+    EmergencyContactRepository,
+    PatientContactRepository,
+    PatientRepository,
+)
 from medical_api.modules.patients.schemas import (
+    EmergencyContactCreate,
+    EmergencyContactRead,
+    EmergencyContactUpdate,
     PatientCommunicationPreferencesRead,
     PatientCommunicationPreferencesUpdate,
+    PatientContactCreate,
+    PatientContactRead,
+    PatientContactUpdate,
     PatientCreate,
     PatientRead,
     PatientUpdate,
 )
-from medical_api.modules.patients.service import PatientService
+from medical_api.modules.patients.service import (
+    EmergencyContactService,
+    PatientContactService,
+    PatientService,
+)
 
 router = APIRouter()
 
@@ -129,3 +143,163 @@ async def update_patient(
     )
     await session.commit()
     return patient
+
+
+@router.get("/{patient_id}/contacts", response_model=list[PatientContactRead])
+async def list_patient_contacts(
+    patient_id: uuid.UUID, user: AuthenticatedUser, session: DbSession
+) -> list[PatientContactRead]:
+    service = PatientContactService(PatientContactRepository(session), PatientRepository(session))
+    return await service.list_for_patient(user.organization_id, patient_id)
+
+
+@router.post(
+    "/contacts",
+    response_model=PatientContactRead,
+    status_code=201,
+    dependencies=[Depends(require_roles(*_PATIENT_WRITE_ROLES))],
+)
+async def create_patient_contact(
+    payload: PatientContactCreate, user: AuthenticatedUser, session: DbSession
+) -> PatientContactRead:
+    service = PatientContactService(PatientContactRepository(session), PatientRepository(session))
+    contact = await service.create(user.organization_id, payload)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="patient_contact.created",
+        resource_type="patient_contact",
+        resource_id=str(contact.id),
+        metadata={"patient_id": str(contact.patient_id)},
+    )
+    await session.commit()
+    return contact
+
+
+@router.patch(
+    "/contacts/{contact_id}",
+    response_model=PatientContactRead,
+    dependencies=[Depends(require_roles(*_PATIENT_WRITE_ROLES))],
+)
+async def update_patient_contact(
+    contact_id: uuid.UUID,
+    payload: PatientContactUpdate,
+    user: AuthenticatedUser,
+    session: DbSession,
+) -> PatientContactRead:
+    service = PatientContactService(PatientContactRepository(session), PatientRepository(session))
+    contact = await service.update(user.organization_id, contact_id, payload)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="patient_contact.updated",
+        resource_type="patient_contact",
+        resource_id=str(contact.id),
+        metadata={"fields": sorted(payload.model_dump(exclude_unset=True).keys())},
+    )
+    await session.commit()
+    return contact
+
+
+@router.delete(
+    "/contacts/{contact_id}",
+    status_code=204,
+    dependencies=[Depends(require_roles(*_PATIENT_WRITE_ROLES))],
+)
+async def delete_patient_contact(
+    contact_id: uuid.UUID, user: AuthenticatedUser, session: DbSession
+) -> None:
+    service = PatientContactService(PatientContactRepository(session), PatientRepository(session))
+    await service.delete(user.organization_id, contact_id)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="patient_contact.deleted",
+        resource_type="patient_contact",
+        resource_id=str(contact_id),
+    )
+    await session.commit()
+
+
+@router.get("/{patient_id}/emergency-contacts", response_model=list[EmergencyContactRead])
+async def list_emergency_contacts(
+    patient_id: uuid.UUID, user: AuthenticatedUser, session: DbSession
+) -> list[EmergencyContactRead]:
+    service = EmergencyContactService(
+        EmergencyContactRepository(session), PatientRepository(session)
+    )
+    return await service.list_for_patient(user.organization_id, patient_id)
+
+
+@router.post(
+    "/emergency-contacts",
+    response_model=EmergencyContactRead,
+    status_code=201,
+    dependencies=[Depends(require_roles(*_PATIENT_WRITE_ROLES))],
+)
+async def create_emergency_contact(
+    payload: EmergencyContactCreate, user: AuthenticatedUser, session: DbSession
+) -> EmergencyContactRead:
+    service = EmergencyContactService(
+        EmergencyContactRepository(session), PatientRepository(session)
+    )
+    contact = await service.create(user.organization_id, payload)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="emergency_contact.created",
+        resource_type="emergency_contact",
+        resource_id=str(contact.id),
+        metadata={"patient_id": str(contact.patient_id)},
+    )
+    await session.commit()
+    return contact
+
+
+@router.patch(
+    "/emergency-contacts/{contact_id}",
+    response_model=EmergencyContactRead,
+    dependencies=[Depends(require_roles(*_PATIENT_WRITE_ROLES))],
+)
+async def update_emergency_contact(
+    contact_id: uuid.UUID,
+    payload: EmergencyContactUpdate,
+    user: AuthenticatedUser,
+    session: DbSession,
+) -> EmergencyContactRead:
+    service = EmergencyContactService(
+        EmergencyContactRepository(session), PatientRepository(session)
+    )
+    contact = await service.update(user.organization_id, contact_id, payload)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="emergency_contact.updated",
+        resource_type="emergency_contact",
+        resource_id=str(contact.id),
+        metadata={"fields": sorted(payload.model_dump(exclude_unset=True).keys())},
+    )
+    await session.commit()
+    return contact
+
+
+@router.delete(
+    "/emergency-contacts/{contact_id}",
+    status_code=204,
+    dependencies=[Depends(require_roles(*_PATIENT_WRITE_ROLES))],
+)
+async def delete_emergency_contact(
+    contact_id: uuid.UUID, user: AuthenticatedUser, session: DbSession
+) -> None:
+    service = EmergencyContactService(
+        EmergencyContactRepository(session), PatientRepository(session)
+    )
+    await service.delete(user.organization_id, contact_id)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="emergency_contact.deleted",
+        resource_type="emergency_contact",
+        resource_id=str(contact_id),
+    )
+    await session.commit()

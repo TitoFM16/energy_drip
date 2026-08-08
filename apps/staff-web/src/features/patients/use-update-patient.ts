@@ -6,6 +6,8 @@ interface UpdatePatientInput {
   patientId: string;
   first_name?: string;
   last_name?: string;
+  document_id?: string;
+  date_of_birth?: string;
   phone_number?: string;
   email?: string;
   is_active?: boolean;

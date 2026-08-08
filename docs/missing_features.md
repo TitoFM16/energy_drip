@@ -345,6 +345,12 @@ UPDATE`) so a concurrent double-submission of the same token is
 compose up` locally. Gave `api` a real Docker healthcheck and made both
   workers depend on it being healthy, not just started. See "Verify and
   harden the Docker development stack" below for the full writeup.
+- Closed two "Patient management" gaps: document ID and date of birth are
+  now editable (previously silently dropped by the update schema), and
+  `PatientContact`/`EmergencyContact` — pre-existing database models with
+  no API or UI at all — now have full CRUD with a new "Contactos" section
+  on the patient detail page. See "Patient management" below for the full
+  writeup.
 
 ## Priority levels
 
@@ -532,25 +538,45 @@ Remaining acceptance criteria:
 - Support exceptions such as holidays, leave, blocked periods, and one-off
   availability.
 
-### P1: Patient management — search/create/edit done, records still open
+### P1: Patient management — search/create/edit/contacts done, records still open
 
 The Patients screen (`apps/staff-web/src/routes/patients/`) now has live
 search (name or document ID, `GET /api/v1/patients?q=`), an inline creation
-form, and a detail page (`/patients/:id`) that edits name/phone/email and
-toggles active/inactive. Verified live in a browser: create a patient →
-search finds it → open its detail page → edit phone number → save → change
-persists back in the list.
+form, and a detail page (`/patients/:id`) that edits name/document ID/date
+of birth/phone/email and toggles active/inactive. Verified live in a
+browser: create a patient → search finds it → open its detail page → edit
+phone number → save → change persists back in the list.
+
+Also closed since then — document ID and date of birth are now editable
+(`PatientUpdate` gained both fields; they were previously shown read-only
+because the schema silently dropped them), and `PatientContact`/
+`EmergencyContact` (pre-existing database models with no API or UI at all)
+now have full CRUD: `modules/patients/{repository,service,router}.py`
+gained a join-through-Patient scoped repository (same pattern as
+medical_records' allergies/conditions/medications), a new "Contactos"
+section on the patient detail page (`contacts-section.tsx`) lists, creates,
+and deletes both kinds. Unlike allergies/conditions/medications (clinical
+data, gated to practitioner/medical_director), these are demographic
+fields — gated the same way as Patient create/update itself (receptionist
+and up), since front-desk staff are the ones who'd normally collect this
+information.
+
+Verified: 6 new pytest cases in `apps/api/tests/test_patient_contacts.py`
+(org-scoping and role-gating for both resources, update, delete, audit
+coverage, document_id/date_of_birth round-trip); live in a browser (add a
+work contact and an emergency contact, reload to confirm they persisted
+server-side, delete one); a new Playwright E2E test
+(`patient-contacts.spec.ts`) with the standard deliberate-break regression
+proof. Also had to fix `patient-creation.spec.ts`'s existing assertion —
+it checked `getByText('CC1029384756')` for the document ID, which stopped
+matching once that became an editable input's value instead of read-only
+text (`getByText` only matches rendered text content, not form control
+values); switched to `getByLabel('Documento').toHaveValue(...)`.
 
 Remaining acceptance criteria:
 
 - Pagination (the search endpoint caps at 25 results server-side; the UI has
   no way to page past that yet).
-- Edit document ID and date of birth — the backend's `PatientUpdate` schema
-  doesn't accept either field today, so they're shown read-only on the detail
-  page rather than silently failing to save.
-- Contact details and emergency contacts — `PatientContact` and
-  `EmergencyContact` already exist as database models
-  (`modules/patients/models.py`) but have no API or UI at all.
 - Medical history, allergies, conditions, and medications (see "Complete
   medical-record API" below).
 - Duplicate-patient detection and a controlled merge process.
