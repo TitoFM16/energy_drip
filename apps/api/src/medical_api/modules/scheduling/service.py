@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from medical_api.core.exceptions import ConflictError, NotFoundError
 from medical_api.modules.identity.repository import UserRepository
 from medical_api.modules.notifications.service import enqueue_event
+from medical_api.modules.patients.repository import PatientRepository
 from medical_api.modules.scheduling.models import (
     Appointment,
     AppointmentStatus,
@@ -17,6 +18,7 @@ from medical_api.modules.scheduling.repository import (
     AppointmentRepository,
     AvailabilityRepository,
     PractitionerRepository,
+    RoomRepository,
 )
 from medical_api.modules.scheduling.schemas import (
     AppointmentCreate,
@@ -31,13 +33,44 @@ MAX_AVAILABILITY_WINDOW_DAYS = 31
 
 
 class AppointmentService:
-    def __init__(self, repository: AppointmentRepository, session: AsyncSession):
+    def __init__(
+        self,
+        repository: AppointmentRepository,
+        session: AsyncSession,
+        *,
+        patients: PatientRepository | None = None,
+        practitioners: PractitionerRepository | None = None,
+        availability: AvailabilityRepository | None = None,
+        rooms: RoomRepository | None = None,
+    ):
         self.repository = repository
         self.session = session
+        self.patients = patients or PatientRepository(session)
+        self.practitioners = practitioners or PractitionerRepository(session)
+        self.availability = availability or AvailabilityRepository(session)
+        self.rooms = rooms or RoomRepository(session)
 
     async def schedule(self, organization_id: uuid.UUID, data: AppointmentCreate) -> Appointment:
+        # The raw API never trusted that patient_id/practitioner_id/room_id
+        # actually belong to the caller's organization before this — a
+        # cross-tenant ID would previously have been accepted silently.
+        if await self.patients.get(organization_id, data.patient_id) is None:
+            raise NotFoundError("Patient", data.patient_id)
+        if await self.practitioners.get(organization_id, data.practitioner_id) is None:
+            raise NotFoundError("Practitioner", data.practitioner_id)
+        if data.room_id is not None and await self.rooms.get(organization_id, data.room_id) is None:
+            raise NotFoundError("Room", data.room_id)
+
+        await self._check_within_availability(
+            organization_id, data.practitioner_id, data.starts_at, data.ends_at
+        )
+
         if await self.repository.has_conflict(data.practitioner_id, data.starts_at, data.ends_at):
             raise ConflictError("Practitioner already has an appointment in that time range")
+        if data.room_id is not None and await self.repository.has_room_conflict(
+            data.room_id, data.starts_at, data.ends_at
+        ):
+            raise ConflictError("Room already has an appointment in that time range")
 
         appointment = Appointment(organization_id=organization_id, **data.model_dump())
         await self.repository.create(appointment)
@@ -59,6 +92,29 @@ class AppointmentService:
             },
         )
         return appointment
+
+    async def _check_within_availability(
+        self,
+        organization_id: uuid.UUID,
+        practitioner_id: uuid.UUID,
+        starts_at: datetime,
+        ends_at: datetime,
+    ) -> None:
+        # The UI only ever offers slots computed from these same rules, but
+        # the raw API previously enforced nothing here — a direct POST could
+        # book a practitioner at 3am on a day with no rule at all. Same
+        # rule-times-as-UTC-directly interpretation as
+        # AvailabilityService.compute_slots (see its docstring).
+        rules = await self.availability.list_rules(organization_id, practitioner_id)
+        weekday = starts_at.weekday()
+        for rule in rules:
+            if rule.weekday != weekday:
+                continue
+            rule_start = datetime.combine(starts_at.date(), rule.start_time, tzinfo=UTC)
+            rule_end = datetime.combine(starts_at.date(), rule.end_time, tzinfo=UTC)
+            if rule_start <= starts_at and ends_at <= rule_end:
+                return
+        raise ConflictError("Appointment time is outside the practitioner's availability")
 
     async def change_status(
         self,

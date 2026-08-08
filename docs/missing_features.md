@@ -291,6 +291,15 @@ UPDATE`) so a concurrent double-submission of the same token is
   would have been fetched server-side by WeasyPrint during PDF
   rendering. See "Strict submission validation" below for the full
   writeup.
+- Closed three "Appointment management" trust-boundary gaps: booking now
+  validates that patient/practitioner/room IDs actually belong to the
+  caller's organization, rejects appointments outside the practitioner's
+  configured availability, and rejects room double-booking (not just
+  practitioner double-booking). Found a real DoS bug along the way — a
+  `duration_minutes <= 0` availability query hung the API's entire
+  single-threaded event loop forever, since the slot-computation loop
+  never advanced; fixed by bounding the query parameter. See "Appointment
+  management" below for the full writeup.
 
 ## Priority levels
 
@@ -407,25 +416,64 @@ practitioner → see open slots → book a slot with a searched patient → new
 appointment appears and the slot disappears from availability → Confirmar
 updates its status live.
 
+Also closed since then — three trust-boundary gaps in `AppointmentService.schedule()`
+(`modules/scheduling/service.py`) and one real DoS bug in the availability
+endpoint:
+
+- **Organization ownership.** `schedule()` previously accepted any
+  `patient_id`/`practitioner_id`/`room_id` UUID without checking it belonged
+  to the caller's organization — a raw `POST /appointments` call could
+  silently reference another org's patient or practitioner. Now checks each
+  via the same org-scoped repository `.get()` every other module uses,
+  returning 404 on a mismatch. `RoomRepository` (new, read-only) was added
+  for this — rooms have no create/list API yet (see "Select location, room,
+  and treatment when booking" below, still open), but `Appointment.room_id`
+  already accepted one, so booking still needed to validate any room_id it
+  was given.
+- **Availability enforcement.** The UI only ever offered slots computed from
+  a practitioner's `AvailabilityRule` rows, but the API itself enforced
+  nothing — a direct `POST /appointments` could book outside every
+  configured rule (e.g. 3am on a day with no rule at all). `schedule()` now
+  checks the requested `[starts_at, ends_at)` falls entirely inside one of
+  the practitioner's rule windows for that weekday (same
+  rule-times-as-UTC-directly interpretation as `AvailabilityService.compute_slots`),
+  409ing otherwise.
+- **Room conflicts.** `has_room_conflict` (new, mirrors the existing
+  practitioner `has_conflict`) rejects double-booking the same room across
+  two different practitioners — the practitioner-conflict check alone
+  wouldn't have caught that.
+- **`duration_minutes` DoS.** Found a real bug while closing the bound-check
+  bullet below: `AvailabilityService.compute_slots`' slot-walking loop
+  (`while cursor + step <= day_end: ... cursor += step`) never advances when
+  `duration_minutes <= 0` (`step` is a zero or negative `timedelta`) —
+  `GET /appointments/availability?duration_minutes=0` hung the single-threaded
+  asyncio event loop forever, freezing the whole API process for every
+  organization, not just the caller's. Fixed by bounding the query param
+  itself (`Query(30, ge=5, le=480)`) so FastAPI rejects it with a 422 before
+  the service ever sees it.
+
+Verified: 7 new pytest cases in
+`apps/api/tests/test_appointment_scheduling_validation.py` (cross-org
+patient/practitioner/room all rejected, outside-availability rejected,
+in-window succeeds, room double-booking across practitioners rejected,
+zero-duration query rejected instead of hanging); live curl against the
+running `docker compose` stack confirmed the same four cases; the full
+Playwright E2E suite (including `staff-appointment-booking.spec.ts`, which
+books through the real computed-slots UI) passed against the rebuilt API
+container.
+
 Remaining acceptance criteria:
 
 - Week view (day view only for now).
 - Edit/reschedule an existing appointment (only status changes and creation
-  exist; no way to move a booked appointment to a different slot).
+  exist; no way to move a booked appointment to a different slot — the new
+  availability/conflict checks above only cover creation).
 - Select location, room, and treatment when booking (only patient +
-  practitioner + slot today).
+  practitioner + slot today; rooms have no create/list API or UI yet even
+  though booking now validates a room_id if one is supplied).
 - Use the availability endpoint in the public booking interface too (staff-web
   is done; landing page's `/reservar` still doesn't use it — see "Connected
   public booking experience").
-- Validate that newly created and rescheduled appointments fall inside allowed
-  availability, not merely that they avoid practitioner conflicts (today
-  nothing stops booking outside a practitioner's availability rules via the
-  raw `POST /appointments` call — the UI only ever offers computed slots, but
-  the API itself doesn't enforce it).
-- Reject room conflicts as well as practitioner conflicts (no room selection
-  yet at all — see above).
-- Validate organization ownership of patient, practitioner, room, and related
-  records.
 - Display appointment status history (the backend records it in
   `AppointmentStatusHistory`; nothing surfaces it in the UI).
 - Trigger the appropriate outbox events after state changes (only
@@ -438,8 +486,6 @@ Remaining acceptance criteria:
   the gap with local-time formatting.
 - Support exceptions such as holidays, leave, blocked periods, and one-off
   availability.
-- Validate `duration_minutes` with safe positive bounds and prevent invalid or
-  excessive slot generation.
 
 ### P1: Patient management — search/create/edit done, records still open
 

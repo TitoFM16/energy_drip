@@ -10,6 +10,7 @@ from medical_api.modules.scheduling.models import (
     AppointmentStatusHistory,
     AvailabilityRule,
     Practitioner,
+    Room,
 )
 
 _INACTIVE_STATUSES = (AppointmentStatus.CANCELLED, AppointmentStatus.NO_SHOW)
@@ -52,6 +53,17 @@ class AppointmentRepository:
     ) -> bool:
         stmt = select(Appointment.id).where(
             Appointment.practitioner_id == practitioner_id,
+            Appointment.status.notin_(_INACTIVE_STATUSES),
+            Appointment.starts_at < ends_at,
+            Appointment.ends_at > starts_at,
+        )
+        return (await self.session.execute(stmt)).first() is not None
+
+    async def has_room_conflict(
+        self, room_id: uuid.UUID, starts_at: datetime, ends_at: datetime
+    ) -> bool:
+        stmt = select(Appointment.id).where(
+            Appointment.room_id == room_id,
             Appointment.status.notin_(_INACTIVE_STATUSES),
             Appointment.starts_at < ends_at,
             Appointment.ends_at > starts_at,
@@ -146,3 +158,18 @@ class PractitionerRepository:
             conditions.append(Practitioner.is_active.is_(True))
         stmt = select(Practitioner).where(*conditions).order_by(Practitioner.created_at)
         return list((await self.session.execute(stmt)).scalars().all())
+
+
+class RoomRepository:
+    """Read-only for now — nothing creates rooms via the API yet (no
+    Location/Room management screen exists), but `Appointment.room_id`
+    already accepts one, so booking still needs to confirm any room_id it's
+    given actually belongs to the caller's organization.
+    """
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def get(self, organization_id: uuid.UUID, room_id: uuid.UUID) -> Room | None:
+        stmt = select(Room).where(Room.organization_id == organization_id, Room.id == room_id)
+        return (await self.session.execute(stmt)).scalar_one_or_none()

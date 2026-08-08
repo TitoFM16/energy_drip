@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from medical_api.api.dependencies import AuthenticatedUser, DbSession
 from medical_api.core.security import require_roles
@@ -100,7 +100,10 @@ async def get_available_slots(
     practitioner_id: uuid.UUID,
     date_from: date,
     date_to: date,
-    duration_minutes: int = 30,
+    # A duration <= 0 makes AvailabilityService.compute_slots' slot-walking
+    # loop never advance past a day's end, hanging the process — see
+    # missing_features.md's "Appointment management" for the full writeup.
+    duration_minutes: int = Query(30, ge=5, le=480),
 ) -> list[AvailableSlot]:
     service = AvailabilityService(AvailabilityRepository(session), AppointmentRepository(session))
     return await service.compute_slots(
