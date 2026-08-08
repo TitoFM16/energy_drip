@@ -12,7 +12,13 @@ test('admin manages a practitioner availability rule from Settings', async ({ pa
   await expect(page).toHaveURL(`${STAFF_WEB_URL}/`);
 
   await page.goto(`${STAFF_WEB_URL}/settings`);
-  await page.getByLabel('Profesional').selectOption({ label: 'E2E Practitioner' });
+  // A plain getByLabel('Profesional') is ambiguous on this page: the
+  // "Manage user role assignments" section also has a per-user
+  // "Profesional" role checkbox for each seeded user. Scoping to the
+  // combobox role picks out only the <select>, not those checkboxes.
+  await page
+    .getByRole('combobox', { name: 'Profesional' })
+    .selectOption({ label: 'E2E Practitioner' });
 
   // bootstrapClinic already seeds one all-day rule per weekday as test
   // fixture data — add a distinct, narrower rule through the real form and

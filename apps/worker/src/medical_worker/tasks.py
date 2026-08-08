@@ -40,4 +40,5 @@ from medical_worker.workflows import (  # noqa: F401, E402
     consent_document_generation,
     consent_request,
     missed_appointment,
+    notification_retry,
 )

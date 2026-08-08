@@ -325,6 +325,19 @@ UPDATE`) so a concurrent double-submission of the same token is
   any route reads it, and `TrustedHostMiddleware` is enforced in
   production. See "API and application security hardening" below for the
   full writeup.
+- Corrected "Consent delivery automation": most of it was already built in
+  earlier sessions without ever being marked done (auto-generating a
+  consent request on appointment scheduling, sending it over WhatsApp,
+  recording notification/request relationships, surfacing failures on the
+  dashboard). Closed the one real remaining gap — a failed
+  `appointment_confirmation` WhatsApp send can now be retried from
+  `/notifications` via the same transactional-outbox pattern as everything
+  else. Found and fixed a real bug along the way: the new retry workflow's
+  actor was never registered with the dramatiq worker-queue process (a gap
+  only a live run against the real stack could catch), and a since-stale
+  E2E locator (`getByLabel('Profesional')`, now ambiguous after the
+  user-role-management work). See "Consent delivery automation" below for
+  the full writeup.
 
 ## Priority levels
 
@@ -1220,15 +1233,89 @@ Remaining acceptance criteria:
   per-organization variation to configure, but worth noting as a real gap
   if that ever changes).
 
-### P1: Consent delivery automation
+### P1: Consent delivery automation — mostly done, retry closes the last real gap
 
-Acceptance criteria:
+This section was stale: most of it was already built (in earlier sessions,
+without ever being marked done here) by the time this pass started.
+`apps/worker/src/medical_worker/workflows/appointment_confirmation.py`'s
+`handle_appointment_scheduled` — triggered by the `appointment.scheduled`
+outbox event every `POST /appointments` call enqueues — already sends the
+WhatsApp confirmation and then unconditionally calls `start_consent_request`
+(`workflows/consent_request.py`), which finds the organization's active
+consent template, creates the request, and sends the link. Both sends
+create a `NotificationMessage` row (channel/category/recipient/template_key/
+payload), so "record notification and consent-request relationships" was
+already covered too — `payload` carries `appointment_id`/`patient_id`, and
+failures were already visible on the operational dashboard's "Estado de
+notificaciones" card and the dedicated `/notifications` page (built in an
+earlier "Build organization-scoped operational dashboard" pass).
 
-- Generate a consent request when required by the appointment or treatment.
-- Send the short-lived link through the configured channel.
-- Record notification and consent-request relationships.
-- Resend or escalate when delivery fails.
-- Stop reminders when consent is completed, invalidated, or replaced.
+What was genuinely still open — "resend or escalate when delivery fails" —
+is now closed for the one template where a blind retry is actually safe:
+`POST /api/v1/notifications/{id}/retry` (new `NotificationService.retry` in
+`modules/notifications/service.py`) re-sends a `FAILED` `appointment_confirmation`
+message via the same transactional-outbox pattern as everything else
+(`notification.retry_requested` → a new `handle_notification_retry_requested`
+workflow that re-derives fresh send params from the current appointment/
+patient rows, not from anything persisted about the original attempt).
+`consent_link` is deliberately excluded — its link embedded a single-use
+token that's never persisted (by design), so a real retry means creating a
+new request via the existing `resend_request` flow, not resending an
+orphaned old link; the endpoint returns 409 with that guidance rather than
+silently doing nothing. A "Reintentar" button appears on `/notifications`
+for exactly the messages this can act on.
+
+Found and fixed a real integration bug while verifying this live (pytest
+alone couldn't have caught it: nothing in the suite runs the actual
+dramatiq worker-queue process) — `apps/worker/src/medical_worker/tasks.py`,
+the entrypoint the `dramatiq medical_worker.tasks` CLI command imports, has
+to explicitly import every workflow module to register its actors with the
+broker; the new `notification_retry` module was never added there, so the
+outbox consumer's `handler.send(...)` call succeeded (it just enqueues to
+Redis) while the actual dramatiq worker process had no registered actor to
+receive it and moved the message straight to its dead-letter queue. Fixed
+by adding the import; verified by creating a real appointment against the
+running `docker compose` stack with no WhatsApp credentials configured
+(guaranteeing a real permanent failure), retrying it through the actual
+`/notifications` UI in a browser, and confirming the full round trip:
+pending → worker re-attempts → fails again with the same real
+`WHATSAPP_API_TOKEN` error, proving the retry path itself works correctly
+rather than just appearing to because nothing failed a second time.
+
+Also fixed a real E2E test bug found while verifying this, unrelated to
+notifications: `settings-availability-rules.spec.ts`'s
+`getByLabel('Profesional')` had become ambiguous once
+`user-roles-section.tsx` (from the earlier "Manage user role assignments"
+work) put a per-user "Profesional" role checkbox on the same `/settings`
+page as the availability-rules practitioner `<select>` — both share that
+label. This was a real race, not a deterministic failure: it only
+strict-mode-violates once the role section's own user-list query has
+resolved by the time the availability-rules test's locator runs, which is
+why it had already passed several times before failing twice in a row.
+Fixed by scoping to `getByRole('combobox', { name: 'Profesional' })`,
+which only the `<select>` satisfies; verified stable across two full
+E2E suite runs.
+
+Verified: 4 new pytest cases in `apps/api/tests/test_notification_retry.py`
+(role gate + org scope, rejects a non-`failed` message, rejects an
+unsupported `template_key`, succeeds + enqueues the right outbox event +
+is audited); the live round-trip described above; two full Playwright E2E
+runs back-to-back passed cleanly.
+
+Remaining acceptance criteria:
+
+- "Generate a consent request when required by the **treatment**" is only
+  partially true — a request is generated whenever the organization has
+  _any_ active template, regardless of which treatment (if any) the
+  appointment is for. There's no way yet to say "this specific treatment
+  requires this specific template" (treatments and consent templates
+  aren't linked at all today).
+- "Stop reminders when consent is completed, invalidated, or replaced"
+  doesn't fully apply as originally scoped — there is no periodic
+  auto-resend of an unanswered _consent_ link to stop (only appointment
+  reminders, a separate feature, are periodic). If automatic consent-link
+  re-nagging is ever built, it should check the request's current status
+  first; nothing does that today because nothing needs to yet.
 
 ### P1: Patient communication preferences and opt-out — done
 

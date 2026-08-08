@@ -18,6 +18,7 @@ from medical_worker.workflows.consent_document_generation import (
     handle_consent_submitted,
     handle_document_regenerate_requested,
 )
+from medical_worker.workflows.notification_retry import handle_notification_retry_requested
 
 logger = structlog.get_logger(__name__)
 
@@ -36,6 +37,7 @@ _EVENT_HANDLERS = {
     "consent.submitted": handle_consent_submitted,
     "consent.document.regenerate_requested": handle_document_regenerate_requested,
     "whatsapp.delivery_status": update_delivery_status,
+    "notification.retry_requested": handle_notification_retry_requested,
 }
 
 
