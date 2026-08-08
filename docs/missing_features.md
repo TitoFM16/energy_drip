@@ -63,6 +63,10 @@ therefore no longer tracked as wholly missing:
 - Authentication now supports hashed rotating refresh tokens, logout,
   invite-based staff onboarding, and password-reset tokens.
 - Staff invites and password-reset tokens are expiring and single-use.
+- Settings now lets an `organization_admin` replace a staff user's role set;
+  updates are organization-scoped and audited, cannot assign the
+  platform-wide admin role, and cannot demote the clinic's last
+  `organization_admin`.
 - Password hashing uses `bcrypt` directly and request schemas constrain password
   length.
 - Scheduling now supports availability-rule creation, listing, and deletion.
@@ -639,7 +643,7 @@ Remaining acceptance criteria:
   "Requiere revisión médica" rather than a pass/fail verdict, but this needs
   a real design/content review, not just a first pass.
 
-### P1: Settings administration — practitioners and availability rules done, rest still a placeholder
+### P1: Settings administration — practitioners, availability rules, and user roles done; remaining sections open
 
 The Settings screen (`apps/staff-web/src/routes/settings/`) now has a working
 Practitioners section: list every practitioner (including inactive ones),
@@ -672,10 +676,29 @@ This is the first `DELETE` mutation in staff-web, so a small new
 test actually catches regressions by disabling the "Agregar horario"
 button and watching it fail before reverting.
 
+Settings now also includes **Roles de usuarios**
+(`apps/staff-web/src/routes/settings/user-roles-section.tsx`). An
+`organization_admin` can select one or more clinic roles for each existing
+staff user and save the complete role set through
+`PATCH /api/v1/auth/users/{user_id}/roles`. The endpoint uses the existing
+many-to-many `UserRole` model, looks the target up inside the caller's
+organization, and is server-gated to `organization_admin` only (a
+`medical_director` can still list users for the Professionals workflow but
+cannot change permissions). Clinic admins cannot grant `platform_admin`.
+Demotions are serialized and return a clear `409` when they would remove the
+organization's last administrator. Every real change records
+`user.role_updated` with the actor plus the complete old/new role sets in
+audit metadata. Backend integration coverage verifies the stricter role gate,
+last-admin guard, replacement semantics, and audit record; the Settings E2E
+flow adds a second role, reloads, and confirms both roles persist. Its
+regression proof also passed: hardcoding the "Guardar roles" button disabled
+made Playwright fail specifically because the button was not enabled; after
+reverting that deliberate break, the same test passed again.
+
 Remaining acceptance criteria:
 
-- Manage user role assignments (users can be listed now; nothing lets an
-  admin change or add a role after invite time).
+- ~~Manage user role assignments.~~ Done: the organization-admin-only,
+  audited role editor and last-admin guard are described above.
 - ~~Manage locations, rooms, and~~ availability rules. Availability rules
   now have a Settings UI — see above. Locations/rooms don't exist as a
   concept anywhere in the data model yet (not just missing UI — there's

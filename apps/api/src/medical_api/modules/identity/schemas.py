@@ -1,6 +1,6 @@
 import uuid
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from medical_api.modules.identity.models import RoleName
 
@@ -32,6 +32,19 @@ class UserRead(BaseModel):
     roles: list[str]
 
     model_config = {"from_attributes": True}
+
+
+class UserRolesUpdate(BaseModel):
+    roles: list[RoleName] = Field(min_length=1)
+
+    @field_validator("roles")
+    @classmethod
+    def validate_assignable_roles(cls, roles: list[RoleName]) -> list[RoleName]:
+        if len(set(roles)) != len(roles):
+            raise ValueError("Roles must not contain duplicates")
+        if RoleName.PLATFORM_ADMIN in roles:
+            raise ValueError("platform_admin cannot be assigned by an organization administrator")
+        return roles
 
 
 class RegisterOrganizationRequest(BaseModel):

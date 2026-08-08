@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from medical_api.modules.identity.models import (
@@ -39,6 +39,25 @@ class UserRepository:
     async def get_by_id(self, user_id: uuid.UUID) -> User | None:
         return await self.session.get(User, user_id)
 
+    async def get_by_id_for_organization(
+        self, organization_id: uuid.UUID, user_id: uuid.UUID
+    ) -> User | None:
+        stmt = select(User).where(
+            User.id == user_id,
+            User.organization_id == organization_id,
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def lock_organization_users(self, organization_id: uuid.UUID) -> None:
+        """Serialize role changes that could demote an organization's last admin."""
+        stmt = (
+            select(User.id)
+            .where(User.organization_id == organization_id)
+            .order_by(User.id)
+            .with_for_update()
+        )
+        await self.session.execute(stmt)
+
     async def list_by_organization(self, organization_id: uuid.UUID) -> list[User]:
         stmt = select(User).where(User.organization_id == organization_id).order_by(User.full_name)
         return list((await self.session.execute(stmt)).scalars().all())
@@ -68,6 +87,25 @@ class UserRepository:
     async def assign_role(self, user_id: uuid.UUID, role_id: uuid.UUID) -> None:
         self.session.add(UserRole(user_id=user_id, role_id=role_id))
         await self.session.flush()
+
+    async def replace_roles(self, user_id: uuid.UUID, role_names: list[RoleName]) -> None:
+        await self.session.execute(delete(UserRole).where(UserRole.user_id == user_id))
+        for role_name in role_names:
+            role = await self.get_or_create_role(role_name)
+            self.session.add(UserRole(user_id=user_id, role_id=role.id))
+        await self.session.flush()
+
+    async def count_users_with_role(self, organization_id: uuid.UUID, role_name: RoleName) -> int:
+        stmt = (
+            select(func.count(UserRole.id))
+            .join(User, User.id == UserRole.user_id)
+            .join(Role, Role.id == UserRole.role_id)
+            .where(
+                User.organization_id == organization_id,
+                Role.name == role_name,
+            )
+        )
+        return int((await self.session.execute(stmt)).scalar_one())
 
 
 class RefreshTokenRepository:

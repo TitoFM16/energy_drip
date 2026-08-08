@@ -115,6 +115,15 @@ async def _invite_and_accept(client, admin_headers: dict, role: str) -> dict:
     return accept.json()
 
 
+async def _current_user(client, access_token: str) -> dict:
+    response = await client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
 async def _create_patient(client, headers: dict) -> str:
     response = await client.post(
         "/api/v1/patients",
@@ -309,3 +318,76 @@ async def test_audit_events_form_a_verifiable_hash_chain(client):
     assert chain[0].previous_hash is None
     for earlier, later in pairwise(chain):
         assert later.previous_hash == earlier.event_hash
+
+
+async def test_role_updates_require_organization_admin_and_are_org_scoped(client):
+    org = await _register_org(client)
+    admin_headers = {"Authorization": f"Bearer {org['access_token']}"}
+    medical_director = await _invite_and_accept(client, admin_headers, "medical_director")
+    practitioner = await _invite_and_accept(client, admin_headers, "practitioner")
+    practitioner_user = await _current_user(client, practitioner["access_token"])
+
+    response = await client.patch(
+        f"/api/v1/auth/users/{practitioner_user['id']}/roles",
+        json={"roles": ["assistant"]},
+        headers={"Authorization": f"Bearer {medical_director['access_token']}"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Insufficient permissions"
+
+    other_org = await _register_org(client)
+    other_admin = await _current_user(client, other_org["access_token"])
+    cross_org = await client.patch(
+        f"/api/v1/auth/users/{other_admin['id']}/roles",
+        json={"roles": ["assistant"]},
+        headers=admin_headers,
+    )
+    assert cross_org.status_code == 404
+
+
+async def test_last_organization_admin_cannot_be_demoted(client):
+    org = await _register_org(client)
+    admin_headers = {"Authorization": f"Bearer {org['access_token']}"}
+    admin_user = await _current_user(client, org["access_token"])
+
+    response = await client.patch(
+        f"/api/v1/auth/users/{admin_user['id']}/roles",
+        json={"roles": ["medical_director"]},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "The last organization administrator cannot be demoted. Assign another administrator first."
+    )
+
+
+async def test_role_update_replaces_roles_and_records_audit_metadata(client):
+    org = await _register_org(client)
+    organization_id = uuid.UUID(org["organization_id"])
+    admin_headers = {"Authorization": f"Bearer {org['access_token']}"}
+    admin_user = await _current_user(client, org["access_token"])
+    practitioner = await _invite_and_accept(client, admin_headers, "practitioner")
+    practitioner_user = await _current_user(client, practitioner["access_token"])
+
+    response = await client.patch(
+        f"/api/v1/auth/users/{practitioner_user['id']}/roles",
+        json={"roles": ["assistant", "auditor"]},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert sorted(response.json()["roles"]) == ["assistant", "auditor"]
+
+    stmt = select(AuditEvent).where(
+        AuditEvent.organization_id == organization_id,
+        AuditEvent.action == "user.role_updated",
+        AuditEvent.resource_id == practitioner_user["id"],
+    )
+    event = (await client.db_session.execute(stmt)).scalar_one()
+    assert event.actor_user_id == uuid.UUID(admin_user["id"])
+    assert event.event_metadata == {
+        "old_roles": ["practitioner"],
+        "new_roles": ["assistant", "auditor"],
+    }
