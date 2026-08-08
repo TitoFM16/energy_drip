@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +26,7 @@ from medical_api.modules.identity.schemas import (
     RegisterOrganizationResponse,
     TokenResponse,
     UserRead,
+    UserRolesUpdate,
 )
 from medical_api.modules.identity.service import AuthService
 
@@ -125,6 +128,34 @@ async def list_users(user: AuthenticatedUser, session: DbSession) -> list[UserRe
         )
         for u in users
     ]
+
+
+@router.patch(
+    "/users/{target_user_id}/roles",
+    response_model=UserRead,
+    dependencies=[Depends(require_roles("organization_admin"))],
+)
+async def update_user_roles(
+    target_user_id: uuid.UUID,
+    payload: UserRolesUpdate,
+    user: AuthenticatedUser,
+    session: DbSession,
+) -> UserRead:
+    service = _build_service(session)
+    target = await service.update_user_roles(
+        user.organization_id,
+        user.user_id,
+        target_user_id,
+        payload.roles,
+    )
+    await session.commit()
+    return UserRead(
+        id=target.id,
+        organization_id=target.organization_id,
+        email=target.email,
+        full_name=target.full_name,
+        roles=await UserRepository(session).get_roles(target.id),
+    )
 
 
 @router.post(

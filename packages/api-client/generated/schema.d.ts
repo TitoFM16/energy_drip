@@ -290,6 +290,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/users/{target_user_id}/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update User Roles */
+        patch: operations["update_user_roles_api_v1_auth_users__target_user_id__roles_patch"];
+        trace?: never;
+    };
     "/api/v1/booking-requests": {
         parameters: {
             query?: never;
@@ -2451,6 +2468,11 @@ export interface components {
             /** Roles */
             roles: string[];
         };
+        /** UserRolesUpdate */
+        UserRolesUpdate: {
+            /** Roles */
+            roles: components["schemas"]["RoleName"][];
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -3018,6 +3040,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserRead"][];
+                };
+            };
+        };
+    };
+    update_user_roles_api_v1_auth_users__target_user_id__roles_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                target_user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserRolesUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

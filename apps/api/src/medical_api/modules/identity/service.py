@@ -5,6 +5,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from medical_api.core.config import get_settings
+from medical_api.core.exceptions import ConflictError, NotFoundError
 from medical_api.core.security import create_access_token, hash_password, verify_password
 from medical_api.modules.audit.service import AuditService
 from medical_api.modules.identity.models import (
@@ -122,6 +123,57 @@ class AuthService:
         token = await self.refresh_tokens.get_by_hash(hash_token(raw_refresh_token))
         if token is not None and token.revoked_at is None:
             await self.refresh_tokens.revoke(token, datetime.now(UTC))
+
+    async def update_user_roles(
+        self,
+        organization_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+        target_user_id: uuid.UUID,
+        roles: list[RoleName],
+    ) -> User:
+        if RoleName.PLATFORM_ADMIN in roles:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "platform_admin cannot be assigned by an organization administrator",
+            )
+
+        # Every role update takes the same organization-user locks before
+        # counting admins, so two concurrent demotions cannot both observe
+        # an admin still remaining and leave the clinic without an owner.
+        await self.users.lock_organization_users(organization_id)
+        target = await self.users.get_by_id_for_organization(organization_id, target_user_id)
+        if target is None:
+            raise NotFoundError("User", target_user_id)
+
+        old_roles = sorted(str(role) for role in await self.users.get_roles(target.id))
+        new_roles = sorted(str(role) for role in roles)
+        if RoleName.PLATFORM_ADMIN in old_roles:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Platform administrator roles cannot be changed by an organization administrator",
+            )
+        if (
+            RoleName.ORGANIZATION_ADMIN in old_roles
+            and RoleName.ORGANIZATION_ADMIN not in roles
+            and await self.users.count_users_with_role(organization_id, RoleName.ORGANIZATION_ADMIN)
+            <= 1
+        ):
+            raise ConflictError(
+                "The last organization administrator cannot be demoted. "
+                "Assign another administrator first."
+            )
+
+        if old_roles != new_roles:
+            await self.users.replace_roles(target.id, roles)
+            await AuditService(self.session).record(
+                organization_id=organization_id,
+                actor_user_id=actor_user_id,
+                action="user.role_updated",
+                resource_type="user",
+                resource_id=str(target.id),
+                metadata={"old_roles": old_roles, "new_roles": new_roles},
+            )
+        return target
 
     async def create_invite(
         self, organization_id: uuid.UUID, invited_by_user_id: uuid.UUID, email: str, role: RoleName
