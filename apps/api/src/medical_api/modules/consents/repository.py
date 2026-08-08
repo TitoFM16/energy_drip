@@ -17,6 +17,7 @@ from medical_api.modules.consents.models import (
     ConsentTemplateVersion,
     EligibilityResult,
 )
+from medical_api.modules.identity.models import User
 
 
 class ConsentTemplateRepository:
@@ -118,6 +119,7 @@ class ConsentRepository:
             conditions.append(
                 ConsentSubmission.eligibility_result == EligibilityResult.REQUIRES_MANUAL_REVIEW
             )
+            conditions.append(ConsentSubmission.review_decision.is_(None))
 
         stmt = stmt.where(*conditions).order_by(ConsentRequest.created_at.desc())
         return list((await self.session.execute(stmt)).scalars().all())
@@ -167,6 +169,29 @@ class ConsentRepository:
 
     async def get_submission(self, submission_id: uuid.UUID) -> ConsentSubmission | None:
         return await self.session.get(ConsentSubmission, submission_id)
+
+    async def get_submission_with_org_check(
+        self,
+        organization_id: uuid.UUID,
+        submission_id: uuid.UUID,
+        *,
+        for_update: bool = False,
+    ) -> ConsentSubmission | None:
+        stmt = (
+            select(ConsentSubmission)
+            .join(ConsentRequest, ConsentRequest.id == ConsentSubmission.consent_request_id)
+            .where(
+                ConsentSubmission.id == submission_id,
+                ConsentRequest.organization_id == organization_id,
+            )
+        )
+        if for_update:
+            stmt = stmt.with_for_update(of=ConsentSubmission)
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def get_user_full_name(self, user_id: uuid.UUID) -> str | None:
+        stmt = select(User.full_name).where(User.id == user_id)
+        return (await self.session.execute(stmt)).scalar_one_or_none()
 
     async def get_request(self, request_id: uuid.UUID) -> ConsentRequest | None:
         return await self.session.get(ConsentRequest, request_id)

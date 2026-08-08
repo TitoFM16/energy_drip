@@ -1236,6 +1236,14 @@
         "title": "ConsentRequestStatus",
         "type": "string"
       },
+      "ConsentReviewDecision": {
+        "enum": [
+          "approved",
+          "rejected"
+        ],
+        "title": "ConsentReviewDecision",
+        "type": "string"
+      },
       "ConsentSubmissionCreate": {
         "properties": {
           "answers": {
@@ -1291,6 +1299,62 @@
             "title": "Id",
             "type": "string"
           },
+          "review_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConsentReviewDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "review_rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Rationale"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "reviewed_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By Name"
+          },
+          "reviewed_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By User Id"
+          },
           "submitted_at": {
             "format": "date-time",
             "title": "Submitted At",
@@ -1306,6 +1370,11 @@
           "submitted_at",
           "timezone",
           "eligibility_result",
+          "review_decision",
+          "review_rationale",
+          "reviewed_by_user_id",
+          "reviewed_by_name",
+          "reviewed_at",
           "has_signature",
           "answers"
         ],
@@ -1328,6 +1397,59 @@
           "eligibility_result"
         ],
         "title": "ConsentSubmissionResult",
+        "type": "object"
+      },
+      "ConsentSubmissionReviewCreate": {
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/ConsentReviewDecision"
+          },
+          "rationale": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Rationale",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision",
+          "rationale"
+        ],
+        "title": "ConsentSubmissionReviewCreate",
+        "type": "object"
+      },
+      "ConsentSubmissionReviewRead": {
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/ConsentReviewDecision"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          },
+          "reviewed_at": {
+            "format": "date-time",
+            "title": "Reviewed At",
+            "type": "string"
+          },
+          "reviewed_by_name": {
+            "title": "Reviewed By Name",
+            "type": "string"
+          },
+          "reviewed_by_user_id": {
+            "format": "uuid",
+            "title": "Reviewed By User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision",
+          "rationale",
+          "reviewed_by_user_id",
+          "reviewed_by_name",
+          "reviewed_at"
+        ],
+        "title": "ConsentSubmissionReviewRead",
         "type": "object"
       },
       "ConsentTemplateCreate": {
@@ -4696,6 +4818,64 @@
           }
         ],
         "summary": "Resend Consent Request",
+        "tags": [
+          "consents"
+        ]
+      }
+    },
+    "/api/v1/consents/submissions/{submission_id}/review": {
+      "post": {
+        "operationId": "review_consent_submission_api_v1_consents_submissions__submission_id__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Submission Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentSubmissionReviewCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentSubmissionReviewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Review Consent Submission",
         "tags": [
           "consents"
         ]

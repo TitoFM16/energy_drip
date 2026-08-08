@@ -419,6 +419,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/consents/submissions/{submission_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review Consent Submission */
+        post: operations["review_consent_submission_api_v1_consents_submissions__submission_id__review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/consents/templates": {
         parameters: {
             query?: never;
@@ -1855,6 +1872,11 @@ export interface components {
          * @enum {string}
          */
         ConsentRequestStatus: "pending" | "completed" | "expired" | "invalidated";
+        /**
+         * ConsentReviewDecision
+         * @enum {string}
+         */
+        ConsentReviewDecision: "approved" | "rejected";
         /** ConsentSubmissionCreate */
         ConsentSubmissionCreate: {
             /** Answers */
@@ -1881,6 +1903,15 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            review_decision: components["schemas"]["ConsentReviewDecision"] | null;
+            /** Review Rationale */
+            review_rationale: string | null;
+            /** Reviewed At */
+            reviewed_at: string | null;
+            /** Reviewed By Name */
+            reviewed_by_name: string | null;
+            /** Reviewed By User Id */
+            reviewed_by_user_id: string | null;
             /**
              * Submitted At
              * Format: date-time
@@ -1897,6 +1928,30 @@ export interface components {
              * Format: uuid
              */
             submission_id: string;
+        };
+        /** ConsentSubmissionReviewCreate */
+        ConsentSubmissionReviewCreate: {
+            decision: components["schemas"]["ConsentReviewDecision"];
+            /** Rationale */
+            rationale: string;
+        };
+        /** ConsentSubmissionReviewRead */
+        ConsentSubmissionReviewRead: {
+            decision: components["schemas"]["ConsentReviewDecision"];
+            /** Rationale */
+            rationale: string;
+            /**
+             * Reviewed At
+             * Format: date-time
+             */
+            reviewed_at: string;
+            /** Reviewed By Name */
+            reviewed_by_name: string;
+            /**
+             * Reviewed By User Id
+             * Format: uuid
+             */
+            reviewed_by_user_id: string;
         };
         /**
          * ConsentTemplateCreate
@@ -3497,6 +3552,41 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_consent_submission_api_v1_consents_submissions__submission_id__review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsentSubmissionReviewCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentSubmissionReviewRead"];
                 };
             };
             /** @description Validation Error */

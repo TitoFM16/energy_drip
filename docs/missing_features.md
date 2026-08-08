@@ -120,6 +120,10 @@ therefore no longer tracked as wholly missing:
   request a consent against a published template. See "Consent-template
   administration and publishing" and "Consent review workspace" above for
   what's done and what's still open.
+- Authorized clinical staff can now finalize an approved/rejected decision
+  with a required rationale for consent submissions that require manual
+  review. The one-way, organization-scoped decision records reviewer/time
+  metadata and an audit event; see "Consent review workspace" below.
 - The Dashboard is now an organization-scoped operational workspace showing
   upcoming appointments, cancellations/no-shows, pending and expired consent
   requests, submissions requiring medical review, and recent WhatsApp
@@ -693,6 +697,28 @@ link. Verified live end to end in two browsers: author a template → publish
 (`http://localhost:5174/c/:token`) in patient-web → submit → see the
 eligibility result and answers in the staff review panel.
 
+Submissions whose rules return `requires_manual_review` now include a
+one-way **Decisión médica** workflow. A practitioner, medical director, or
+organization administrator can record `approved` or `rejected` plus a
+required clinical rationale through
+`POST /api/v1/consents/submissions/{submission_id}/review`. The endpoint
+locks and resolves the submission through its organization-owned request,
+returns `409` rather than overwriting an existing decision, and never changes
+the original answers or `eligibility_result`. The finalized submission stores
+who reviewed it and when, and records `consent_submission.reviewed` with the
+decision/rationale in the audit trail. Reviewed submissions also leave the
+dashboard's `needs_review=true` queue.
+
+In staff-web, the detail panel shows the decision form only for unresolved
+manual-review submissions and authorized roles. After submission, the form is
+replaced by the final decision badge, rationale, reviewer name, and timestamp.
+Backend integration tests cover the role gate, cross-organization isolation,
+one-way conflict, queue removal, and audit metadata; a Playwright E2E flow
+covers the practitioner UI and persistence after reload. Its deliberate-break
+proof also passed: hardcoding "Registrar decisión" disabled made Playwright
+fail specifically because the button was not enabled; after reverting that
+temporary break, the same test passed again.
+
 Remaining acceptance criteria:
 
 - Filter the review list by appointment, treatment, eligibility result, or
@@ -700,9 +726,9 @@ Remaining acceptance criteria:
 - Distinguish expired/invalidated requests visually with the same care as
   pending/completed (the status badge exists but nothing drives those two
   statuses yet — see the request-lifecycle gap below).
-- Allow authorized professionals to record a review decision and rationale
-  (today the workspace is read-only — there's no way to act on
-  `requires_manual_review`).
+- ~~Allow authorized professionals to record a review decision and
+  rationale.~~ Done: the one-way, audited clinical review workflow is
+  described above.
 - Display signed-document metadata and a link to the generated PDF (only
   "firma capturada: sí/no" is shown; no document viewer).
 - Prevent the eligibility engine from being presented as an autonomous

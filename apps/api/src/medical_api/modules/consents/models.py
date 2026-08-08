@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String, func
+from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from medical_api.core.database import (
@@ -18,6 +18,11 @@ class EligibilityResult(StrEnum):
     ELIGIBLE = "eligible"
     REQUIRES_MANUAL_REVIEW = "requires_manual_review"
     NOT_ELIGIBLE = "not_eligible"
+
+
+class ConsentReviewDecision(StrEnum):
+    APPROVED = "approved"
+    REJECTED = "rejected"
 
 
 class ConsentRequestStatus(StrEnum):
@@ -113,11 +118,22 @@ class ConsentRequest(Base, UUIDPrimaryKeyMixin, TimestampMixin, OrganizationScop
 
 
 class ConsentSubmission(Base, UUIDPrimaryKeyMixin):
-    """Immutable once created: never updated in place. A correction requires
-    a new `ConsentRequest` and a new submission.
+    """Patient-supplied content is immutable once created: answers and the
+    eligibility result are never updated in place. A correction requires a
+    new `ConsentRequest` and submission. The nullable review fields are the
+    sole exception and may transition exactly once from unset to finalized.
     """
 
     __tablename__ = "consent_submissions"
+    __table_args__ = (
+        CheckConstraint(
+            "(review_decision IS NULL AND review_rationale IS NULL "
+            "AND reviewed_by_user_id IS NULL AND reviewed_at IS NULL) OR "
+            "(review_decision IS NOT NULL AND review_rationale IS NOT NULL "
+            "AND reviewed_by_user_id IS NOT NULL AND reviewed_at IS NOT NULL)",
+            name="ck_consent_submissions_review_metadata_complete",
+        ),
+    )
 
     consent_request_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("consent_requests.id", ondelete="CASCADE"), unique=True
@@ -129,6 +145,10 @@ class ConsentSubmission(Base, UUIDPrimaryKeyMixin):
     ip_address: Mapped[str]
     user_agent: Mapped[str]
     eligibility_result: Mapped[EligibilityResult]
+    review_decision: Mapped[ConsentReviewDecision | None]
+    review_rationale: Mapped[str | None] = mapped_column(String(2000))
+    reviewed_by_user_id: Mapped[uuid.UUID | None]
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ConsentAnswer(Base, UUIDPrimaryKeyMixin):
