@@ -19,6 +19,7 @@ export function useUpdateAppointmentStatus() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['appointments'] });
       void queryClient.invalidateQueries({ queryKey: ['availability'] });
+      void queryClient.invalidateQueries({ queryKey: ['appointment-status-history'] });
     },
   });
 }

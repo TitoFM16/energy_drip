@@ -355,6 +355,12 @@ compose up` locally. Gave `api` a real Docker healthcheck and made both
   no API or UI at all — now have full CRUD with a new "Contactos" section
   on the patient detail page. See "Patient management" below for the full
   writeup.
+- Closed "Display appointment status history": `AppointmentStatusHistory`
+  was already recorded on every schedule/status-change but had no read
+  endpoint or UI, and `changed_by_user_id` was never actually populated
+  despite existing for exactly that purpose. Agenda now has a "Ver
+  historial" toggle per appointment. See "Appointment management" below
+  for the full writeup.
 
 ## Priority levels
 
@@ -517,6 +523,26 @@ Playwright E2E suite (including `staff-appointment-booking.spec.ts`, which
 books through the real computed-slots UI) passed against the rebuilt API
 container.
 
+Also closed "Display appointment status history": `AppointmentStatusHistory`
+was already recorded on every schedule/status-change, but had no read
+endpoint or UI at all — and `changed_by_user_id` was recorded on the model
+but never actually populated by either write path, despite the column
+existing for exactly that purpose. `GET /appointments/{id}/status-history`
+(org-scoped via the same join-through-parent pattern as everywhere else in
+this codebase) now returns each transition with the acting user's resolved
+full name; `schedule()`/`change_status()` both gained an `actor_user_id`
+parameter threaded from the router's `AuthenticatedUser`. The Agenda screen
+now has a "Ver historial"/"Ocultar historial" toggle per appointment.
+
+Verified: 3 new pytest cases in `apps/api/tests/test_appointment_status_history.py`
+(creation and a status transition both recorded with the correct actor
+name, org-scoping, 404 for an unknown appointment); live in a browser —
+booked an appointment, opened its history (showed "Programada" with the
+real admin's name), clicked Confirmar, watched a second "Programada →
+Confirmada" entry appear without a page reload; extended
+`staff-appointment-booking.spec.ts` to cover the same flow, with the
+standard deliberate-break regression proof.
+
 Remaining acceptance criteria:
 
 - Week view (day view only for now).
@@ -529,11 +555,12 @@ Remaining acceptance criteria:
 - Use the availability endpoint in the public booking interface too (staff-web
   is done; landing page's `/reservar` still doesn't use it — see "Connected
   public booking experience").
-- Display appointment status history (the backend records it in
-  `AppointmentStatusHistory`; nothing surfaces it in the UI).
 - Trigger the appropriate outbox events after state changes (only
   `appointment.scheduled` and `appointment.cancelled` currently enqueue
-  events; confirm/checked_in/completed/no_show don't).
+  events; confirm/checked_in/completed/no_show don't — left open rather
+  than enqueueing events nothing consumes yet; see "Consent delivery
+  automation" for why this codebase treats an unconsumed event as premature
+  rather than harmless).
 - Convert location-local availability rules to UTC correctly; the current
   implementation interprets rule times directly as UTC, and the Agenda UI
   intentionally displays everything in UTC to match that (see

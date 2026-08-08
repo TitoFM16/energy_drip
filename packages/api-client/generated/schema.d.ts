@@ -91,6 +91,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/appointments/{appointment_id}/status-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Appointment Status History */
+        get: operations["get_appointment_status_history_api_v1_appointments__appointment_id__status_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/audit": {
         parameters: {
             query?: never;
@@ -1449,6 +1466,27 @@ export interface components {
          * @enum {string}
          */
         AppointmentStatus: "scheduled" | "confirmed" | "consent_pending" | "consent_completed" | "checked_in" | "completed" | "cancelled" | "no_show";
+        /** AppointmentStatusHistoryRead */
+        AppointmentStatusHistoryRead: {
+            /**
+             * Changed At
+             * Format: date-time
+             */
+            changed_at: string;
+            /** Changed By Full Name */
+            changed_by_full_name: string | null;
+            /** Changed By User Id */
+            changed_by_user_id: string | null;
+            from_status: components["schemas"]["AppointmentStatus"] | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Reason */
+            reason: string | null;
+            to_status: components["schemas"]["AppointmentStatus"];
+        };
         /** AppointmentStatusUpdate */
         AppointmentStatusUpdate: {
             /** Reason */
@@ -2973,6 +3011,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AppointmentRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_appointment_status_history_api_v1_appointments__appointment_id__status_history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                appointment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentStatusHistoryRead"][];
                 };
             };
             /** @description Validation Error */

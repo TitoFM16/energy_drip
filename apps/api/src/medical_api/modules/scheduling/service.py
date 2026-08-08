@@ -22,6 +22,7 @@ from medical_api.modules.scheduling.repository import (
 )
 from medical_api.modules.scheduling.schemas import (
     AppointmentCreate,
+    AppointmentStatusHistoryRead,
     AvailabilityRuleCreate,
     AvailableSlot,
     PractitionerCreate,
@@ -42,6 +43,7 @@ class AppointmentService:
         practitioners: PractitionerRepository | None = None,
         availability: AvailabilityRepository | None = None,
         rooms: RoomRepository | None = None,
+        users: UserRepository | None = None,
     ):
         self.repository = repository
         self.session = session
@@ -49,8 +51,15 @@ class AppointmentService:
         self.practitioners = practitioners or PractitionerRepository(session)
         self.availability = availability or AvailabilityRepository(session)
         self.rooms = rooms or RoomRepository(session)
+        self.users = users or UserRepository(session)
 
-    async def schedule(self, organization_id: uuid.UUID, data: AppointmentCreate) -> Appointment:
+    async def schedule(
+        self,
+        organization_id: uuid.UUID,
+        data: AppointmentCreate,
+        *,
+        actor_user_id: uuid.UUID | None = None,
+    ) -> Appointment:
         # The raw API never trusted that patient_id/practitioner_id/room_id
         # actually belong to the caller's organization before this — a
         # cross-tenant ID would previously have been accepted silently.
@@ -76,7 +85,10 @@ class AppointmentService:
         await self.repository.create(appointment)
         await self.repository.add_status_history(
             AppointmentStatusHistory(
-                appointment_id=appointment.id, from_status=None, to_status=appointment.status
+                appointment_id=appointment.id,
+                from_status=None,
+                to_status=appointment.status,
+                changed_by_user_id=actor_user_id,
             )
         )
         # Same transaction as the appointment write: outbox guarantees the
@@ -122,6 +134,8 @@ class AppointmentService:
         appointment_id: uuid.UUID,
         new_status: AppointmentStatus,
         reason: str | None,
+        *,
+        actor_user_id: uuid.UUID | None = None,
     ) -> Appointment:
         appointment = await self.repository.get(organization_id, appointment_id)
         if appointment is None:
@@ -133,6 +147,7 @@ class AppointmentService:
                 appointment_id=appointment.id,
                 from_status=previous_status,
                 to_status=new_status,
+                changed_by_user_id=actor_user_id,
                 reason=reason,
             )
         )
@@ -144,6 +159,40 @@ class AppointmentService:
                 payload={"appointment_id": str(appointment.id)},
             )
         return appointment
+
+    async def get_status_history(
+        self, organization_id: uuid.UUID, appointment_id: uuid.UUID
+    ) -> list[AppointmentStatusHistoryRead]:
+        appointment = await self.repository.get(organization_id, appointment_id)
+        if appointment is None:
+            raise NotFoundError("Appointment", appointment_id)
+        entries = await self.repository.list_status_history(organization_id, appointment_id)
+
+        # One-off lookups, not a join: history entries are few per
+        # appointment and often share the same actor, so the extra queries
+        # this could in principle avoid aren't worth a join here.
+        names_by_user_id: dict[uuid.UUID, str] = {}
+        results = []
+        for entry in entries:
+            full_name = None
+            if entry.changed_by_user_id is not None:
+                if entry.changed_by_user_id not in names_by_user_id:
+                    user = await self.users.get_by_id(entry.changed_by_user_id)
+                    if user is not None:
+                        names_by_user_id[entry.changed_by_user_id] = user.full_name
+                full_name = names_by_user_id.get(entry.changed_by_user_id)
+            results.append(
+                AppointmentStatusHistoryRead(
+                    id=entry.id,
+                    from_status=entry.from_status,
+                    to_status=entry.to_status,
+                    changed_by_user_id=entry.changed_by_user_id,
+                    changed_by_full_name=full_name,
+                    changed_at=entry.changed_at,
+                    reason=entry.reason,
+                )
+            )
+        return results
 
 
 class AvailabilityService:

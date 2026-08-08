@@ -306,6 +306,78 @@
         "title": "AppointmentStatus",
         "type": "string"
       },
+      "AppointmentStatusHistoryRead": {
+        "properties": {
+          "changed_at": {
+            "format": "date-time",
+            "title": "Changed At",
+            "type": "string"
+          },
+          "changed_by_full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed By Full Name"
+          },
+          "changed_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed By User Id"
+          },
+          "from_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AppointmentStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "to_status": {
+            "$ref": "#/components/schemas/AppointmentStatus"
+          }
+        },
+        "required": [
+          "id",
+          "from_status",
+          "to_status",
+          "changed_by_user_id",
+          "changed_by_full_name",
+          "changed_at",
+          "reason"
+        ],
+        "title": "AppointmentStatusHistoryRead",
+        "type": "object"
+      },
       "AppointmentStatusUpdate": {
         "properties": {
           "reason": {
@@ -3933,6 +4005,58 @@
           }
         ],
         "summary": "Update Appointment Status",
+        "tags": [
+          "appointments"
+        ]
+      }
+    },
+    "/api/v1/appointments/{appointment_id}/status-history": {
+      "get": {
+        "operationId": "get_appointment_status_history_api_v1_appointments__appointment_id__status_history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "appointment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Appointment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AppointmentStatusHistoryRead"
+                  },
+                  "title": "Response Get Appointment Status History Api V1 Appointments  Appointment Id  Status History Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Appointment Status History",
         "tags": [
           "appointments"
         ]

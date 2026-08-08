@@ -41,4 +41,13 @@ test('staff logs in, books an available slot for a patient, and sees it on the a
   // The booking panel closes and the new appointment shows up in the
   // day's list once the mutation settles.
   await expect(page.getByText(patient.first_name).first()).toBeVisible({ timeout: 10_000 });
+
+  // Status history: recorded on creation, and again on every status
+  // change, with the actor who made each change.
+  const appointmentRow = page.getByText(patient.first_name).locator('xpath=ancestor::li');
+  await appointmentRow.getByRole('button', { name: 'Ver historial' }).click();
+  await expect(appointmentRow.getByText(/Programada ·.*E2E Admin/)).toBeVisible();
+
+  await appointmentRow.getByRole('button', { name: 'Confirmar' }).click();
+  await expect(appointmentRow.getByText(/Programada → Confirmada ·.*E2E Admin/)).toBeVisible();
 });

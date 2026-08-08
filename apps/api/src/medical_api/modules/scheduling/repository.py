@@ -79,6 +79,24 @@ class AppointmentRepository:
         self.session.add(entry)
         await self.session.flush()
 
+    async def list_status_history(
+        self, organization_id: uuid.UUID, appointment_id: uuid.UUID
+    ) -> list[AppointmentStatusHistory]:
+        # AppointmentStatusHistory has no organization_id of its own — same
+        # join-through-parent pattern as everywhere else in this codebase
+        # (ClinicalNote, ConsentDocument, etc.) — so the org check has to
+        # join back to Appointment.
+        stmt = (
+            select(AppointmentStatusHistory)
+            .join(Appointment, Appointment.id == AppointmentStatusHistory.appointment_id)
+            .where(
+                AppointmentStatusHistory.appointment_id == appointment_id,
+                Appointment.organization_id == organization_id,
+            )
+            .order_by(AppointmentStatusHistory.changed_at)
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
     async def list_for_practitioner_range(
         self, practitioner_id: uuid.UUID, start: datetime, end: datetime
     ) -> list[Appointment]:

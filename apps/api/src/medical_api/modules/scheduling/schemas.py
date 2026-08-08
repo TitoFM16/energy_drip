@@ -41,6 +41,16 @@ class AppointmentRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AppointmentStatusHistoryRead(BaseModel):
+    id: uuid.UUID
+    from_status: AppointmentStatus | None
+    to_status: AppointmentStatus
+    changed_by_user_id: uuid.UUID | None
+    changed_by_full_name: str | None
+    changed_at: datetime
+    reason: str | None
+
+
 class AvailabilityRuleCreate(BaseModel):
     practitioner_id: uuid.UUID
     weekday: int = Field(ge=0, le=6, description="0 = Monday ... 6 = Sunday")

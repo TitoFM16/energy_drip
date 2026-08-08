@@ -5,3 +5,4 @@ export type AvailableSlot = Schemas['AvailableSlot'];
 export type AppointmentStatus = Schemas['AppointmentStatus'];
 export type Appointment = Schemas['AppointmentRead'];
 export type AvailabilityRule = Schemas['AvailabilityRuleRead'];
+export type AppointmentStatusHistoryEntry = Schemas['AppointmentStatusHistoryRead'];

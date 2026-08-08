@@ -15,6 +15,7 @@ from medical_api.modules.scheduling.repository import (
 from medical_api.modules.scheduling.schemas import (
     AppointmentCreate,
     AppointmentRead,
+    AppointmentStatusHistoryRead,
     AppointmentStatusUpdate,
     AvailabilityRuleCreate,
     AvailabilityRuleRead,
@@ -57,7 +58,7 @@ async def create_appointment(
     payload: AppointmentCreate, user: AuthenticatedUser, session: DbSession
 ) -> AppointmentRead:
     service = AppointmentService(AppointmentRepository(session), session)
-    appointment = await service.schedule(user.organization_id, payload)
+    appointment = await service.schedule(user.organization_id, payload, actor_user_id=user.user_id)
     await AuditService(session).record(
         organization_id=user.organization_id,
         actor_user_id=user.user_id,
@@ -79,7 +80,11 @@ async def update_appointment_status(
 ) -> AppointmentRead:
     service = AppointmentService(AppointmentRepository(session), session)
     appointment = await service.change_status(
-        user.organization_id, appointment_id, payload.status, payload.reason
+        user.organization_id,
+        appointment_id,
+        payload.status,
+        payload.reason,
+        actor_user_id=user.user_id,
     )
     await AuditService(session).record(
         organization_id=user.organization_id,
@@ -91,6 +96,14 @@ async def update_appointment_status(
     )
     await session.commit()
     return appointment
+
+
+@router.get("/{appointment_id}/status-history", response_model=list[AppointmentStatusHistoryRead])
+async def get_appointment_status_history(
+    appointment_id: uuid.UUID, user: AuthenticatedUser, session: DbSession
+) -> list[AppointmentStatusHistoryRead]:
+    service = AppointmentService(AppointmentRepository(session), session)
+    return await service.get_status_history(user.organization_id, appointment_id)
 
 
 @router.get("/availability", response_model=list[AvailableSlot])

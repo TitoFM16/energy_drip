@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useAppointments } from '../../features/appointments/use-appointments';
 import { usePatients } from '../../features/patients/use-patients';
 import { usePractitioners } from '../../features/scheduling/use-practitioners';
+import { useAppointmentStatusHistory } from '../../features/scheduling/use-appointment-status-history';
 import { useAvailability } from '../../features/scheduling/use-availability';
 import { useUpdateAppointmentStatus } from '../../features/scheduling/use-update-appointment-status';
 import type {
@@ -128,39 +129,12 @@ export function AgendaPage() {
           )}
           <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
             {dayAppointments.map((appointment) => (
-              <li key={appointment.id} className="flex flex-col gap-2 px-4 py-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-slate-900">
-                      {formatTimeUTC(appointment.starts_at)}–{formatTimeUTC(appointment.ends_at)}
-                    </p>
-                    <p className="text-sm text-slate-500">{appointmentLabel(appointment)}</p>
-                  </div>
-                  <Badge>{STATUS_LABELS[appointment.status]}</Badge>
-                </div>
-                {!TERMINAL_STATUSES.includes(appointment.status) && (
-                  <div className="flex flex-wrap gap-2">
-                    {STATUS_ACTIONS.filter((action) => action.status !== appointment.status).map(
-                      (action) => (
-                        <button
-                          key={action.status}
-                          type="button"
-                          disabled={updateStatus.isPending}
-                          onClick={() =>
-                            updateStatus.mutate({
-                              appointmentId: appointment.id,
-                              status: action.status,
-                            })
-                          }
-                          className="rounded-full border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-                        >
-                          {action.label}
-                        </button>
-                      ),
-                    )}
-                  </div>
-                )}
-              </li>
+              <AppointmentRow
+                key={appointment.id}
+                appointment={appointment}
+                label={appointmentLabel(appointment)}
+                updateStatus={updateStatus}
+              />
             ))}
           </ul>
         </section>
@@ -204,5 +178,73 @@ export function AgendaPage() {
         </section>
       </div>
     </div>
+  );
+}
+
+function AppointmentRow({
+  appointment,
+  label,
+  updateStatus,
+}: {
+  appointment: Appointment;
+  label: string;
+  updateStatus: ReturnType<typeof useUpdateAppointmentStatus>;
+}) {
+  const [showHistory, setShowHistory] = useState(false);
+  const history = useAppointmentStatusHistory(appointment.id, showHistory);
+
+  return (
+    <li className="flex flex-col gap-2 px-4 py-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-slate-900">
+            {formatTimeUTC(appointment.starts_at)}–{formatTimeUTC(appointment.ends_at)}
+          </p>
+          <p className="text-sm text-slate-500">{label}</p>
+        </div>
+        <Badge>{STATUS_LABELS[appointment.status]}</Badge>
+      </div>
+      {!TERMINAL_STATUSES.includes(appointment.status) && (
+        <div className="flex flex-wrap gap-2">
+          {STATUS_ACTIONS.filter((action) => action.status !== appointment.status).map((action) => (
+            <button
+              key={action.status}
+              type="button"
+              disabled={updateStatus.isPending}
+              onClick={() =>
+                updateStatus.mutate({ appointmentId: appointment.id, status: action.status })
+              }
+              className="rounded-full border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => setShowHistory((v) => !v)}
+        className="self-start text-xs text-slate-500 underline"
+      >
+        {showHistory ? 'Ocultar historial' : 'Ver historial'}
+      </button>
+      {showHistory && (
+        <ul className="flex flex-col gap-1 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          {history.isLoading && <li>Cargando historial...</li>}
+          {history.isError && <li>No se pudo cargar el historial.</li>}
+          {history.data?.map((entry) => (
+            <li key={entry.id}>
+              {entry.from_status ? STATUS_LABELS[entry.from_status] + ' → ' : ''}
+              {STATUS_LABELS[entry.to_status]} ·{' '}
+              {new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short' }).format(
+                new Date(entry.changed_at),
+              )}
+              {entry.changed_by_full_name ? ` · ${entry.changed_by_full_name}` : ''}
+              {entry.reason ? ` · ${entry.reason}` : ''}
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
   );
 }
