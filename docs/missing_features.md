@@ -228,19 +228,24 @@ therefore no longer tracked as wholly missing:
   design-tokens CSS files remain unused since neither app reads CSS custom
   properties).
 - Added `apps/e2e`: Playwright end-to-end tests against the real
-  `docker compose up` stack, wired into CI as a third job. 6 flows covered
+  `docker compose up` stack, wired into CI as a third job. 7 flows covered
   (staff login → appointment booking, the full cross-app patient consent
   flow, the public booking form, patient creation as its own
   assertion-bearing test, treatment-plan creation + session recording
-  under the `practitioner` role, and the medical-record flows below) —
-  verified these actually catch regressions, not just that they pass, by
-  deliberately breaking a button and watching the suite fail before
-  reverting, for the appointment-booking, treatment-plan/session, and
-  medical-record tests. See "End-to-end tests" above for the full list of
-  what's covered vs. still open, and two real environment gotchas
+  under the `practitioner` role, the medical-record flows below, and
+  Settings availability-rules management) — verified these actually catch
+  regressions, not just that they pass, by deliberately breaking a button
+  and watching the suite fail before reverting, for the
+  appointment-booking, treatment-plan/session, medical-record, and
+  availability-rules tests. See "End-to-end tests" above for the full
+  list of what's covered vs. still open, and two real environment gotchas
   (slot-grid alignment near day-end, the booking rate-limiter applying to
   repeated local test runs) worth knowing about before extending this
   suite.
+- Closed most of "Settings administration"'s availability-rules gap:
+  added a Settings UI for the practitioner availability-rule API (create,
+  list, delete), which previously only existed as a raw API — see
+  "Settings administration" below.
 - Closed "Complete medical-record API": built org-scoped, role-gated,
   audited APIs for medical history (append-only with finalize/amend, like
   `ClinicalNote`), allergies, conditions, and medications (update +
@@ -550,7 +555,7 @@ Remaining acceptance criteria:
   "Requiere revisión médica" rather than a pass/fail verdict, but this needs
   a real design/content review, not just a first pass.
 
-### P1: Settings administration — practitioners done, rest still a placeholder
+### P1: Settings administration — practitioners and availability rules done, rest still a placeholder
 
 The Settings screen (`apps/staff-web/src/routes/settings/`) now has a working
 Practitioners section: list every practitioner (including inactive ones),
@@ -567,13 +572,30 @@ a practitioner from an existing user → appears in Agenda's picker → toggle
 inactive → disappears from Agenda's picker but stays visible in Settings
 tagged "Inactivo — reactivar" → reactivate → reappears in Agenda.
 
+Also added a **Horarios de disponibilidad** section right below it
+(`apps/staff-web/src/routes/settings/availability-rules-section.tsx`):
+pick a practitioner, see their existing rules sorted by weekday, add a new
+one (day + start/end time), or delete one — all against the
+`POST`/`GET`/`DELETE /api/v1/appointments/availability-rules` endpoints,
+which already existed and were previously only reachable via a raw API
+call (e.g. from `apps/e2e/tests/support/api-setup.ts`'s test fixtures).
+This is the first `DELETE` mutation in staff-web, so a small new
+`useDeleteAvailabilityRule` hook pattern was added to
+`apps/staff-web/src/features/scheduling/`. Verified live in a browser
+(add a rule → appears sorted correctly among existing rules → delete it
+→ disappears) and with an E2E test
+(`apps/e2e/tests/settings-availability-rules.spec.ts`) — verified the
+test actually catches regressions by disabling the "Agregar horario"
+button and watching it fail before reverting.
+
 Remaining acceptance criteria:
 
 - Manage user role assignments (users can be listed now; nothing lets an
   admin change or add a role after invite time).
-- Manage locations, rooms, and availability rules. The availability-rule API
-  already existed; there's still no Settings UI for it (rules can only be
-  created via a raw API call, same as practitioners were before this).
+- ~~Manage locations, rooms, and~~ availability rules. Availability rules
+  now have a Settings UI — see above. Locations/rooms don't exist as a
+  concept anywhere in the data model yet (not just missing UI — there's
+  no backend model to manage).
 - Manage treatment catalogue entries.
 - Manage consent templates and notification configuration.
 - Restrict each section using server-enforced permissions (practitioners
@@ -1548,7 +1570,9 @@ shapes — no dependency on `make seed` or any other test's data, avoiding
 the same shared-dev-database pollution problem `test_auth_flows.py` hit
 earlier (see "Backend integration tests").
 
-Covers 6 flows so far:
+Covers 7 flows so far (the 7th, Settings administration, is coverage
+beyond the acceptance-criteria list below — it doesn't map onto any of
+the still-open items there):
 
 - Staff logs in **through the real login form** (not a token injected into
   storage), books an available slot for a patient, confirms it lands on
@@ -1576,6 +1600,10 @@ Covers 6 flows so far:
   untouched and still finalized); creates and deactivates an allergy;
   creates a condition; creates a medication and marks it no longer
   current.
+- An admin manages a practitioner's availability rules from Settings: adds
+  a new rule through the real form, confirms it's visible sorted
+  alongside the rules `bootstrapClinic()` seeds as fixture data, then
+  deletes it.
 
 Wired into `.github/workflows/ci.yml` as a third job: brings up the full
 Docker Compose stack, waits on `/health/ready` plus each frontend's own
@@ -1587,9 +1615,10 @@ pass**: deliberately hardcoded the "Confirmar cita" button to
 `disabled` in `booking-panel.tsx`, re-ran the appointment-booking test,
 watched it fail with a precise error (button not enabled, 30s timeout),
 reverted, watched it pass again — repeated the same drill for the
-treatment-plan/session test against the "Registrar sesión" button, and
-for the medical-record test against the "Finalizar" button. Also hit two
-real environment issues
+treatment-plan/session test against the "Registrar sesión" button, for
+the medical-record test against the "Finalizar" button, and for the
+Settings availability-rules test against the "Agregar horario" button.
+Also hit two real environment issues
 while building this that are worth knowing about if these start flaking:
 availability-rule time windows are interpreted as UTC and slots are
 generated on a grid aligned to the rule's `start_time` — a narrow window

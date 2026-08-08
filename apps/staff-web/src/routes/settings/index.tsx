@@ -1,4 +1,5 @@
 import { PageHeading } from '../../shared/components/app-shell';
+import { AvailabilityRulesSection } from './availability-rules-section';
 import { PractitionersSection } from './practitioners-section';
 
 export function SettingsPage() {
@@ -6,6 +7,7 @@ export function SettingsPage() {
     <div>
       <PageHeading>Configuración</PageHeading>
       <PractitionersSection />
+      <AvailabilityRulesSection />
     </div>
   );
 }
