@@ -41,6 +41,26 @@ jobs:
         with:
           version: "0.8.17"
       - run: uv sync --all-packages
+      # GitHub Actions' `services:` block has no way to override a
+      # container's command (MinIO's image needs `server /data`, which
+      # postgres/redis above don't), so it's started as a plain step
+      # instead. Credentials/port match docker-compose.yml and
+      # core/config.py's own Settings defaults exactly — same convenience
+      # as the Postgres/Redis services needing no env vars below. Added
+      # once the document tests below became the first backend tests to
+      # actually call upload_bytes/download_bytes against real object
+      # storage instead of never touching it.
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=medical -e MINIO_ROOT_PASSWORD=medical123 \
+            minio/minio server /data
+      - name: Wait for MinIO and create the test bucket
+        working-directory: apps/api
+        run: |
+          timeout 30 sh -c 'until curl -sf http://localhost:9000/minio/health/live; do sleep 1; done'
+          uv run --project ../.. --package medical-api python -c \
+            "from medical_api.integrations.object_storage.client import ensure_bucket_exists; ensure_bucket_exists()"
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - name: Apply migrations
