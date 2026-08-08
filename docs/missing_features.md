@@ -115,6 +115,10 @@ therefore no longer tracked as wholly missing:
   detail page manages that patient's treatment plans and sessions — see
   "Treatment catalogue, plans, and session workflow" above for what's done
   and what's still open.
+- Treatment sessions can now be finalized exactly once by practitioners or
+  medical directors. Finalization is organization-scoped and audited, stores
+  its timestamp, preserves the clinical evolution, and replaces the staff
+  action with a persistent **Finalizada** status.
 - The Consents screen now authors and publishes consent templates and shows
   a review queue with per-submission detail, and the patient detail page can
   request a consent against a published template. See "Consent-template
@@ -679,15 +683,32 @@ deactivated entries stay reachable). The patient detail page
 (`apps/staff-web/src/routes/patients/treatment-plans-section.tsx`) now shows
 a patient's treatment plans, creates a new plan against a catalogue entry,
 records sessions against an active plan (practitioner + clinical evolution
-note), and completes/cancels a plan. This required three backend additions
+note), finalizes each session exactly once, and completes/cancels a plan. This
+required four backend additions
 that didn't exist before: `TreatmentDefinition` CRUD entirely (there was no
 way to create a catalogue entry at all), `GET /api/v1/treatments/plans?patient_id=`
 to list a patient's plans (the repository method existed but was never
-wired to a route), and `PATCH /api/v1/treatments/plans/{id}` to change
-status/notes. Verified live in a browser as a `practitioner`-role user:
+wired to a route), `PATCH /api/v1/treatments/plans/{id}` to change
+status/notes, and `POST /api/v1/treatments/sessions/{session_id}/finalize` to
+lock a completed session. Verified live in a browser as a `practitioner`-role user:
 create a plan for a patient → record a session with clinical evolution →
 complete the plan → recording form and status buttons correctly disappear
 for a non-active plan.
+
+Treatment-session finalization follows the same one-way clinical-record
+pattern as clinical notes and medical-history entries. `POST
+/api/v1/treatments/sessions/{session_id}/finalize` is restricted to
+practitioners and medical directors, resolves the session through its
+organization-owned treatment plan, returns `409` if it is already finalized,
+and records `treatment_session.finalized` in the audit trail. The original
+clinical evolution remains unchanged and there is no API operation that can
+rewrite it. The patient detail UI shows **Borrador** or **Finalizada** and only
+offers **Finalizar** for an open session. Real-PostgreSQL tests cover role and
+organization boundaries, the one-way guard, persistence, and audit metadata.
+The treatment-plan Playwright flow also reloads the page to prove the lock is
+persisted; its deliberate-break proof disabled **Finalizar**, produced the
+expected precise “element is not enabled” failure, then passed after the
+button was restored.
 
 Remaining acceptance criteria:
 
@@ -700,8 +721,9 @@ Remaining acceptance criteria:
   optional `appointment_id`, but nothing in the UI sets it — sessions are
   currently only recordable from the patient detail page, disconnected from
   the Agenda).
-- Finalize sessions and preserve their history (sessions can be created but
-  not edited or finalized/locked).
+- ~~Finalize sessions and preserve their history.~~ Implemented with a
+  one-way, audited finalization endpoint and persistent staff UI state; session
+  clinical evolution has no update endpoint and cannot be rewritten.
 - Provide a dedicated patient-level treatment history view beyond the
   expandable list on the detail page (e.g. progress against planned session
   count, session date timeline).

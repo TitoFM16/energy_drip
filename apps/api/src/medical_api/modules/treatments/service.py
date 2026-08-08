@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from medical_api.core.exceptions import NotFoundError
+from medical_api.core.exceptions import ConflictError, NotFoundError
 from medical_api.modules.patients.repository import PatientRepository
 from medical_api.modules.treatments.models import (
     TreatmentDefinition,
@@ -94,3 +94,17 @@ class TreatmentService:
     ) -> list[TreatmentSession]:
         await self.get_plan(organization_id, treatment_plan_id)
         return await self.repository.list_sessions_for_plan(organization_id, treatment_plan_id)
+
+    async def finalize_session(
+        self, organization_id: uuid.UUID, session_id: uuid.UUID
+    ) -> TreatmentSession:
+        treatment_session = await self.repository.get_session(
+            organization_id, session_id, for_update=True
+        )
+        if treatment_session is None:
+            raise NotFoundError("TreatmentSession", session_id)
+        if treatment_session.is_finalized:
+            raise ConflictError(f"Treatment session {session_id} is already finalized")
+        treatment_session.is_finalized = True
+        treatment_session.finalized_at = datetime.now(UTC)
+        return treatment_session

@@ -43,6 +43,12 @@ class TreatmentPlan(Base, UUIDPrimaryKeyMixin, TimestampMixin, OrganizationScope
 
 
 class TreatmentSession(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """A clinical session becomes immutable once it is finalized.
+
+    The API intentionally exposes no update operation for clinical_evolution;
+    finalization therefore closes the record without rewriting its history.
+    """
+
     __tablename__ = "treatment_sessions"
 
     treatment_plan_id: Mapped[uuid.UUID] = mapped_column(
@@ -55,6 +61,8 @@ class TreatmentSession(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     session_number: Mapped[int]
     performed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     clinical_evolution: Mapped[str | None]
+    is_finalized: Mapped[bool] = mapped_column(default=False)
+    finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class TreatmentFormula(Base, UUIDPrimaryKeyMixin):

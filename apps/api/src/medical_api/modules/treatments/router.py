@@ -170,3 +170,25 @@ async def record_treatment_session(
     )
     await session.commit()
     return treatment_session
+
+
+@router.post(
+    "/sessions/{session_id}/finalize",
+    response_model=TreatmentSessionRead,
+    dependencies=[Depends(require_roles("practitioner", "medical_director"))],
+)
+async def finalize_treatment_session(
+    session_id: uuid.UUID, user: AuthenticatedUser, session: DbSession
+) -> TreatmentSessionRead:
+    service = TreatmentService(TreatmentRepository(session), PatientRepository(session))
+    treatment_session = await service.finalize_session(user.organization_id, session_id)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="treatment_session.finalized",
+        resource_type="treatment_session",
+        resource_id=str(treatment_session.id),
+        metadata={"treatment_plan_id": str(treatment_session.treatment_plan_id)},
+    )
+    await session.commit()
+    return treatment_session

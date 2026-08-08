@@ -3467,10 +3467,26 @@
             ],
             "title": "Clinical Evolution"
           },
+          "finalized_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finalized At"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "is_finalized": {
+            "title": "Is Finalized",
+            "type": "boolean"
           },
           "performed_at": {
             "anyOf": [
@@ -3505,7 +3521,9 @@
           "practitioner_id",
           "session_number",
           "performed_at",
-          "clinical_evolution"
+          "clinical_evolution",
+          "is_finalized",
+          "finalized_at"
         ],
         "title": "TreatmentSessionRead",
         "type": "object"
@@ -7754,6 +7772,54 @@
           }
         ],
         "summary": "Record Treatment Session",
+        "tags": [
+          "treatments"
+        ]
+      }
+    },
+    "/api/v1/treatments/sessions/{session_id}/finalize": {
+      "post": {
+        "operationId": "finalize_treatment_session_api_v1_treatments_sessions__session_id__finalize_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TreatmentSessionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Finalize Treatment Session",
         "tags": [
           "treatments"
         ]

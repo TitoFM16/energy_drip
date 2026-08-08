@@ -79,6 +79,26 @@ class TreatmentRepository:
         )
         return list((await self.session.execute(stmt)).scalars().all())
 
+    async def get_session(
+        self,
+        organization_id: uuid.UUID,
+        session_id: uuid.UUID,
+        *,
+        for_update: bool = False,
+    ) -> TreatmentSession | None:
+        # Sessions inherit their organization boundary from their plan.
+        stmt = (
+            select(TreatmentSession)
+            .join(TreatmentPlan, TreatmentPlan.id == TreatmentSession.treatment_plan_id)
+            .where(
+                TreatmentSession.id == session_id,
+                TreatmentPlan.organization_id == organization_id,
+            )
+        )
+        if for_update:
+            stmt = stmt.with_for_update(of=TreatmentSession)
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
     async def create_session(self, session_row: TreatmentSession) -> TreatmentSession:
         self.session.add(session_row)
         await self.session.flush()
