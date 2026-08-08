@@ -1919,19 +1919,34 @@ initially had a real locator bug of its own — an unscoped `li` +
 "Versión 1" text above it as well as the intended document row, making
 the test flaky independent of the deliberate break; fixed by scoping to
 the document list specifically before doing the break/revert drill).
-Also hit two real environment issues
+Also hit three real environment issues
 while building this that are worth knowing about if these start flaking:
 availability-rule time windows are interpreted as UTC and slots are
 generated on a grid aligned to the rule's `start_time` — a narrow window
 can run out of grid-aligned slots between "now" and day-end depending on
 what time the test happens to run (fixed by testing against tomorrow, not
-today, and using a near-24-hour rule window); and the public booking
+today, and using a near-24-hour rule window); the public booking
 form's rate limiter (5 requests/hour/IP — see "Connected public booking
 experience") applies to repeated local test runs from the same machine
 just as it would to a real abusive caller, so don't be surprised if
 `public-booking.spec.ts` needs a Redis key cleared after several manual
 reruns in a row (`redis-cli DEL booking_request:<ip>` — not `FLUSHDB`,
-which also clears dramatiq's queue state in the same Redis instance).
+which also clears dramatiq's queue state in the same Redis instance); and
+`document-verification.spec.ts` started failing in CI (not locally) twice
+in a row on `main` right after the 10th E2E test was added — the
+workflow's readiness wait checked the API and the three frontends but
+never confirmed either worker process was actually up before running
+tests. `worker` (the outbox-consumer/scheduler loop) starts in a couple of
+seconds and was a red herring; the real culprit is the separate
+`worker-queue` service (`docker-compose.yml`) — the dramatiq process pool
+that actually executes `generate_consent_pdf` — whose several forked
+processes each import WeasyPrint/Pango on boot, slow enough on a freshly
+built, resource-constrained CI runner to blow past the test's 20s
+`toPass`. Fixed in `.github/workflows/ci.yml`'s "Wait for every service to
+actually be ready" step by polling each worker's own startup log line
+(`outbox_consumer.started`, `Worker process is ready for action.`) before
+`Run end-to-end tests`, the same way the API step already polls
+`/health/ready` instead of just "is the port open."
 
 Acceptance criteria:
 

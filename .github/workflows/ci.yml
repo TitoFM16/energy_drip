@@ -137,11 +137,23 @@ jobs:
         # /health/ready checks Postgres and Redis connectivity (see
         # apps/api/src/medical_api/main.py) — a plain "is the port open"
         # check would pass before migrations/startup actually finished.
+        # Neither worker process has an HTTP endpoint to poll, so each is
+        # checked via its own startup log line instead — found this gap
+        # after document-verification.spec.ts (the one test that waits on
+        # real async PDF generation) started failing here twice in a row on
+        # freshly built worker containers. `worker` (the outbox consumer)
+        # starts fast and was a red herring; the actual culprit is
+        # `worker-queue`, the separate dramatiq process pool that executes
+        # generate_consent_pdf — importing WeasyPrint/Pango across several
+        # forked worker processes is the slow part, and the suite was
+        # starting before any of them had finished booting.
         run: |
           timeout 180 bash -c 'until curl -sf http://localhost:8000/health/ready; do sleep 3; done'
           timeout 60 bash -c 'until curl -sf http://localhost:5173 >/dev/null; do sleep 2; done'
           timeout 60 bash -c 'until curl -sf http://localhost:5174 >/dev/null; do sleep 2; done'
           timeout 60 bash -c 'until curl -sf http://localhost:5175 >/dev/null; do sleep 2; done'
+          timeout 60 bash -c 'until docker compose logs worker 2>/dev/null | grep -q "outbox_consumer.started"; do sleep 2; done'
+          timeout 90 bash -c 'until docker compose logs worker-queue 2>/dev/null | grep -q "Worker process is ready for action"; do sleep 2; done'
       - name: Run end-to-end tests
         run: pnpm --filter @medical-platform/e2e test:e2e
       - name: Docker compose logs
