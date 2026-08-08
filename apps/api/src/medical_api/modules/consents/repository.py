@@ -79,8 +79,16 @@ class ConsentRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_request_by_token_hash(self, token_hash: str) -> ConsentRequest | None:
+    async def get_request_by_token_hash(
+        self, token_hash: str, *, for_update: bool = False
+    ) -> ConsentRequest | None:
         stmt = select(ConsentRequest).where(ConsentRequest.token_hash == token_hash)
+        if for_update:
+            # Serializes concurrent submissions of the same single-use
+            # token: a second transaction blocks here until the first
+            # commits, then re-reads status=COMPLETED and is rejected
+            # cleanly instead of racing past the status check.
+            stmt = stmt.with_for_update()
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
     async def get_template_version(
@@ -132,6 +140,16 @@ class ConsentRepository:
 
     async def list_options(self, question_id: uuid.UUID) -> list[ConsentQuestionOption]:
         stmt = select(ConsentQuestionOption).where(ConsentQuestionOption.question_id == question_id)
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def list_options_for_questions(
+        self, question_ids: list[uuid.UUID]
+    ) -> list[ConsentQuestionOption]:
+        if not question_ids:
+            return []
+        stmt = select(ConsentQuestionOption).where(
+            ConsentQuestionOption.question_id.in_(question_ids)
+        )
         return list((await self.session.execute(stmt)).scalars().all())
 
     async def list_rules(self, template_version_id: uuid.UUID) -> list[ConsentRule]:

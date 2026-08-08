@@ -278,6 +278,19 @@ therefore no longer tracked as wholly missing:
   worker had no idempotency guard against its own dramatiq retries. See
   "Document access, verification, and invalidation" below for the full
   writeup.
+- Closed "Strict submission validation": the public consent-submission
+  endpoint now validates every answer against the request's real
+  template-version questions (unknown/duplicate/mismatched IDs, missing
+  required answers, values checked against `question_type`), evaluates
+  eligibility only from those server-validated values, sanitizes the
+  signature SVG against a strict allowlist before it's stored or
+  rendered into a PDF, and locks the request row (`SELECT ... FOR
+UPDATE`) so a concurrent double-submission of the same token is
+  rejected instead of racing. Found a real SSRF vector along the way —
+  an attacker-supplied `<image href="http://...">` in the signature SVG
+  would have been fetched server-side by WeasyPrint during PDF
+  rendering. See "Strict submission validation" below for the full
+  writeup.
 
 ## Priority levels
 
@@ -695,20 +708,56 @@ Remaining acceptance criteria:
 - Retire a template (`is_active` exists on the model but nothing in the API
   or UI sets it to `false`).
 
-### P0: Strict submission validation
+### P0: Strict submission validation — done
 
-The API must not trust question identifiers, field keys, or values supplied by
-the browser.
+The public, unauthenticated `/consents/{token}/submit` endpoint now validates
+every submitted answer against the request's real template version before
+touching eligibility rules, storage, or the PDF pipeline.
 
-Acceptance criteria:
+What changed:
 
-- Confirm every submitted question belongs to the request's template version.
-- Reject unknown, duplicated, or mismatched question IDs and field keys.
-- Enforce required questions and validate values by question type.
-- Evaluate rules only from server-validated answers.
-- Limit payload and signature sizes.
-- Sanitize or safely transform signature input before PDF rendering.
-- Make concurrent submissions of the same single-use token safe and idempotent.
+- `modules/consents/validation.py` (new): `validate_submission_answers`
+  rejects unknown question IDs, duplicate answers, `field_key` mismatches,
+  missing required answers, and values that don't match their question's
+  `question_type` (boolean/single_choice/multiple_choice/text/number),
+  including option-membership checks for choice questions and a length cap
+  on text answers. `ConsentService.submit` now builds the eligibility
+  input (`answers_by_field`) exclusively from these server-validated,
+  normalized values — never from the raw client payload — and persists
+  `ConsentAnswer` rows in template-question order rather than
+  client-submitted order.
+- `shared/utilities/svg_sanitizer.py` (new): the signature SVG is parsed
+  with `defusedxml` (blocks DOCTYPE/ENTITY-based XXE and entity-expansion
+  attacks) and walked against a strict tag/attribute allowlist. The real
+  bug this caught: the actual signature payload (see
+  `apps/patient-web/src/features/signature-pad/signature-pad.tsx`) is an
+  `<svg><image href="...">` wrapping a canvas PNG data URI — a malicious
+  client could instead supply `<image href="http://169.254.169.254/...">`
+  or an internal Docker hostname, which WeasyPrint would fetch
+  server-side when rendering the PDF (SSRF via the PDF pipeline). `href`
+  is now restricted to `data:image/(png|jpeg|jpg);base64,...` URIs only;
+  anything else (including `<script>` tags) is rejected with a 400 before
+  it's ever stored or handed to the worker. The whole SVG is also capped
+  at 2MB before parsing.
+- `ConsentRepository.get_request_by_token_hash` gained a `for_update`
+  flag; `submit()` now resolves the request row with `SELECT ... FOR
+UPDATE`. A second concurrent submission of the same single-use token
+  blocks on the row lock until the first transaction commits, then
+  re-reads `status=completed` and is rejected with the existing 410
+  `{"reason": "completed"}` response — no more relying on
+  `ConsentSubmission`'s unique constraint to turn a race into an unhandled
+  `IntegrityError`.
+
+Verified: 10 new pytest cases in `apps/api/tests/test_submission_validation.py`
+(unknown question, duplicate answer, field_key mismatch, wrong value type,
+invalid choice option, missing required answer, SSRF-style signature,
+`<script>`-tag signature, valid submission, second-submission-of-same-token);
+live curl against the running `docker compose` stack confirmed both the SSRF
+signature and the unknown-question payload are rejected and that a valid
+submission still flows through to a worker-generated, stored
+`ConsentDocument`; the full Playwright E2E suite (including
+`consent-flow.spec.ts`, which drives the real `SignaturePad` component
+through a real browser) passed against the rebuilt API container.
 
 ### P1: Consent request lifecycle — done
 

@@ -36,9 +36,11 @@ from medical_api.modules.consents.schemas import (
     ConsentTemplateRead,
     DocumentVerifyResult,
 )
+from medical_api.modules.consents.validation import validate_submission_answers
 from medical_api.modules.notifications.service import enqueue_event
 from medical_api.shared.domain.eligibility import evaluate_rules
 from medical_api.shared.utilities.hashing import sha256_hash
+from medical_api.shared.utilities.svg_sanitizer import sanitize_signature_svg
 from medical_api.shared.utilities.tokens import generate_opaque_token, hash_token
 
 DOCUMENT_DOWNLOAD_URL_TTL_SECONDS = 300
@@ -159,12 +161,16 @@ class ConsentService:
             expires_at=request.expires_at,
         )
 
-    async def _resolve_active_request(self, raw_token: str) -> ConsentRequest:
+    async def _resolve_active_request(
+        self, raw_token: str, *, for_update: bool = False
+    ) -> ConsentRequest:
         # detail is a small {"reason": ...} dict rather than a free-text
         # string so patient-web can render a distinct message per state
         # ("expired" vs "invalidated" vs "completed") instead of one generic
         # "invalid or expired" message for every failure mode.
-        request = await self.repository.get_request_by_token_hash(hash_token(raw_token))
+        request = await self.repository.get_request_by_token_hash(
+            hash_token(raw_token), for_update=for_update
+        )
         if request is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"reason": "not_found"})
         if request.status == ConsentRequestStatus.PENDING and request.expires_at < datetime.now(
@@ -186,12 +192,38 @@ class ConsentService:
         ip_address: str,
         user_agent: str,
     ) -> ConsentSubmission:
-        request = await self._resolve_active_request(raw_token)
+        # Row-locked: blocks a concurrent submission of the same token until
+        # this transaction commits, instead of racing past the status check
+        # above and relying on ConsentSubmission's unique constraint to turn
+        # a double-submit into an unhandled IntegrityError.
+        request = await self._resolve_active_request(raw_token, for_update=True)
+
+        questions = await self.repository.list_questions(request.template_version_id)
+        options = await self.repository.list_options_for_questions([q.id for q in questions])
+        # The only validation this unauthenticated endpoint gets: rejects
+        # unknown/duplicate/mismatched question IDs, enforces required
+        # questions, and checks each value against its question_type.
+        normalized_by_question = validate_submission_answers(questions, options, data.answers)
+
+        field_key_by_question = {question.id: question.field_key for question in questions}
+        # Eligibility is evaluated from these server-validated values, never
+        # from the raw client payload.
+        answers_by_field = {
+            field_key_by_question[question_id]: value
+            for question_id, value in normalized_by_question.items()
+        }
         rules = await self.repository.list_rules(request.template_version_id)
-        answers_by_field = {answer.field_key: answer.value for answer in data.answers}
         eligibility_result = evaluate_rules(
             [{"rule": rule.rule, "result": rule.result} for rule in rules], answers_by_field
         )
+
+        try:
+            sanitized_signature_svg = sanitize_signature_svg(data.signature_svg)
+        except ValueError as exc:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail={"reason": "invalid_signature", "message": str(exc)},
+            ) from exc
 
         submission = ConsentSubmission(
             consent_request_id=request.id,
@@ -203,13 +235,15 @@ class ConsentService:
         self.session.add(submission)
         await self.session.flush()
 
-        for answer in data.answers:
+        for question in questions:
+            if question.id not in normalized_by_question:
+                continue
             self.session.add(
                 ConsentAnswer(
                     submission_id=submission.id,
-                    question_id=answer.question_id,
-                    field_key=answer.field_key,
-                    value={"value": answer.value},
+                    question_id=question.id,
+                    field_key=question.field_key,
+                    value={"value": normalized_by_question[question.id]},
                 )
             )
 
@@ -217,7 +251,7 @@ class ConsentService:
             f"organizations/{request.organization_id}/patients/{request.patient_id}/"
             f"signatures/{uuid.uuid4()}.svg"
         )
-        upload_bytes(signature_key, data.signature_svg.encode(), "image/svg+xml")
+        upload_bytes(signature_key, sanitized_signature_svg.encode(), "image/svg+xml")
         self.session.add(
             ConsentSignature(submission_id=submission.id, signature_svg_path=signature_key)
         )
