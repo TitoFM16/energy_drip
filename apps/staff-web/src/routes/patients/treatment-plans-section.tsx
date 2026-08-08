@@ -2,6 +2,7 @@ import { Badge, Button, ErrorText, TextField } from '@medical-platform/ui';
 import { useState } from 'react';
 import { usePractitioners } from '../../features/scheduling/use-practitioners';
 import { useTreatmentDefinitions } from '../../features/treatments/use-treatment-definitions';
+import { useFinalizeTreatmentSession } from '../../features/treatments/use-finalize-treatment-session';
 import {
   useCreateTreatmentPlan,
   useTreatmentPlans,
@@ -133,6 +134,7 @@ function PlanDetail({ planId, status }: { planId: string; status: TreatmentPlanS
   const sessions = useTreatmentSessions(planId);
   const practitioners = usePractitioners();
   const recordSession = useRecordTreatmentSession();
+  const finalizeSession = useFinalizeTreatmentSession();
   const updatePlan = useUpdateTreatmentPlan();
 
   const [practitionerId, setPractitionerId] = useState('');
@@ -159,12 +161,26 @@ function PlanDetail({ planId, status }: { planId: string; status: TreatmentPlanS
       <ul className="mb-3 flex flex-col gap-2">
         {sessions.data?.map((session) => (
           <li key={session.id} className="rounded-lg bg-slate-50 px-3 py-2 text-sm">
-            <p className="font-medium text-slate-800">
-              Sesión {session.session_number}
-              {session.performed_at && ` — ${new Date(session.performed_at).toLocaleDateString()}`}
-            </p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-medium text-slate-800">
+                Sesión {session.session_number}
+                {session.performed_at &&
+                  ` — ${new Date(session.performed_at).toLocaleDateString()}`}
+              </p>
+              <Badge>{session.is_finalized ? 'Finalizada' : 'Borrador'}</Badge>
+            </div>
             {session.clinical_evolution && (
               <p className="text-slate-600">{session.clinical_evolution}</p>
+            )}
+            {!session.is_finalized && (
+              <button
+                type="button"
+                disabled={finalizeSession.isPending}
+                onClick={() => finalizeSession.mutate(session.id)}
+                className="mt-1 text-xs text-slate-500 underline disabled:opacity-40"
+              >
+                Finalizar
+              </button>
             )}
           </li>
         ))}

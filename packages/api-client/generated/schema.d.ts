@@ -1256,6 +1256,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/treatments/sessions/{session_id}/finalize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Finalize Treatment Session */
+        post: operations["finalize_treatment_session_api_v1_treatments_sessions__session_id__finalize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/webhooks/whatsapp": {
         parameters: {
             query?: never;
@@ -2728,11 +2745,15 @@ export interface components {
         TreatmentSessionRead: {
             /** Clinical Evolution */
             clinical_evolution: string | null;
+            /** Finalized At */
+            finalized_at: string | null;
             /**
              * Id
              * Format: uuid
              */
             id: string;
+            /** Is Finalized */
+            is_finalized: boolean;
             /** Performed At */
             performed_at: string | null;
             /**
@@ -5433,6 +5454,37 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreatmentSessionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finalize_treatment_session_api_v1_treatments_sessions__session_id__finalize_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

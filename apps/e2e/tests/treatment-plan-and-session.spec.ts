@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { bootstrapClinic, createPatient } from './support/api-setup';
 import { STAFF_WEB_URL } from './support/urls';
 
-test('practitioner creates a treatment plan and records a session with clinical evolution notes', async ({
+test('practitioner creates a treatment plan, records a session, and finalizes it permanently', async ({
   page,
 }) => {
   const clinic = await bootstrapClinic();
@@ -40,4 +40,21 @@ test('practitioner creates a treatment plan and records a session with clinical 
 
   await expect(page.getByText('Sesión 1')).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText('Buena tolerancia, sin reacciones adversas.')).toBeVisible();
+
+  const sessionRow = page.getByRole('listitem').filter({ hasText: 'Sesión 1' });
+  await expect(sessionRow.getByText('Borrador')).toBeVisible();
+  await sessionRow.getByRole('button', { name: 'Finalizar' }).click();
+  await expect(sessionRow.getByText('Finalizada')).toBeVisible({ timeout: 10_000 });
+  await expect(sessionRow.getByRole('button', { name: 'Finalizar' })).toHaveCount(0);
+
+  // Finalization is persisted by the API, not just reflected optimistically.
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Laura Mendoza' })).toBeVisible();
+  await page.getByRole('button', { name: /Limpieza facial E2E/ }).click();
+  const persistedSession = page.getByRole('listitem').filter({ hasText: 'Sesión 1' });
+  await expect(persistedSession.getByText('Finalizada')).toBeVisible();
+  await expect(
+    persistedSession.getByText('Buena tolerancia, sin reacciones adversas.'),
+  ).toBeVisible();
+  await expect(persistedSession.getByRole('button', { name: 'Finalizar' })).toHaveCount(0);
 });

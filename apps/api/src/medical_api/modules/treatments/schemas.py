@@ -67,5 +67,7 @@ class TreatmentSessionRead(BaseModel):
     session_number: int
     performed_at: datetime | None
     clinical_evolution: str | None
+    is_finalized: bool
+    finalized_at: datetime | None
 
     model_config = {"from_attributes": True}
