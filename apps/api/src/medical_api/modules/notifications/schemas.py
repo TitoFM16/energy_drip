@@ -12,6 +12,8 @@ class NotificationMessageRead(BaseModel):
     status: NotificationStatus
     recipient: str
     template_key: str
+    failure_reason: str | None
+    created_at: datetime
     sent_at: datetime | None
     delivered_at: datetime | None
 

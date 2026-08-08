@@ -116,6 +116,10 @@ therefore no longer tracked as wholly missing:
   request a consent against a published template. See "Consent-template
   administration and publishing" and "Consent review workspace" above for
   what's done and what's still open.
+- The Dashboard is now an organization-scoped operational workspace showing
+  upcoming appointments, cancellations/no-shows, pending and expired consent
+  requests, submissions requiring medical review, and recent WhatsApp
+  delivery/failure status. See "Operational dashboard" below.
 - `uv run pytest` now works from the repository root — see "Repair the root
   Python test command" above.
 - `pnpm test` and `make test` both pass now — see "Add frontend tests and
@@ -603,17 +607,32 @@ Remaining acceptance criteria:
   medical_director — but this needs to hold for every future section too).
 - Audit permission and configuration changes.
 
-### P2: Operational dashboard
+### P2: Operational dashboard — done
 
-The Dashboard currently contains introductory text only.
+`apps/staff-web/src/routes/dashboard/index.tsx` is now a read-only operational
+workspace in the same Badge/Callout/list-card visual language as Agenda and
+Consentimientos. It shows upcoming appointments for the next seven days,
+recent/upcoming cancellations and no-shows, pending and expired consent
+requests, completed submissions whose eligibility result requires manual
+medical review, and the latest WhatsApp delivery states. Failed notifications
+include the normalized provider failure reason. Dates are rendered with
+Spanish-Colombia formatting in `America/Bogota`, and every card links to the
+existing Agenda, Consentimientos, or Notificaciones workspace for action.
 
-Acceptance criteria:
+The consent list endpoint now accepts the organization-scoped `status` and
+`needs_review` filters. `needs_review=true` joins submissions in one bulk SQL
+query instead of issuing one detail request per consent. The notification read
+schema now exposes `failure_reason` and `created_at`; the generated OpenAPI and
+TypeScript client contracts were regenerated accordingly. Appointments retain
+their existing organization-scoped range query and are split by status in the
+client because that endpoint intentionally has no status filter.
 
-- Show upcoming appointments and schedule exceptions.
-- Show pending and expired consent requests.
-- Show submissions requiring medical review.
-- Show notification failures and delivery status.
-- Ensure every metric is organization-scoped.
+Verified against an isolated real Docker Compose stack with two organizations:
+the first organization returned confirmed/cancelled appointments, pending and
+expired consents, a manual-review submission, and failed/delivered
+notifications; the second organization returned no rows from any of those
+same queries. `test_operational_dashboard.py` keeps that HTTP-to-PostgreSQL
+boundary and filter coverage repeatable.
 
 ## 3. Consent, medical filter, and signed documents
 

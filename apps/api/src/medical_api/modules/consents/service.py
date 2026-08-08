@@ -234,9 +234,19 @@ class ConsentService:
         return submission
 
     async def list_requests(
-        self, organization_id: uuid.UUID, patient_id: uuid.UUID | None
+        self,
+        organization_id: uuid.UUID,
+        patient_id: uuid.UUID | None,
+        *,
+        status: ConsentRequestStatus | None = None,
+        needs_review: bool = False,
     ) -> list[ConsentRequest]:
-        return await self.repository.list_requests(organization_id, patient_id)
+        return await self.repository.list_requests(
+            organization_id,
+            patient_id,
+            status=status,
+            needs_review=needs_review,
+        )
 
     async def get_request_detail(
         self, organization_id: uuid.UUID, request_id: uuid.UUID

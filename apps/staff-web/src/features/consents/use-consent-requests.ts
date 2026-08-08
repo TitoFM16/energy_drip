@@ -1,13 +1,29 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../../shared/utilities/api';
-import type { ConsentRequest, ConsentRequestDetail } from './types';
+import type { ConsentRequest, ConsentRequestDetail, ConsentRequestStatus } from './types';
 
-export function useConsentRequests(patientId?: string) {
+interface ConsentRequestFilters {
+  status?: ConsentRequestStatus;
+  needsReview?: boolean;
+}
+
+export function useConsentRequests(patientId?: string, filters: ConsentRequestFilters = {}) {
+  const searchParams = new URLSearchParams();
+  if (patientId) searchParams.set('patient_id', patientId);
+  if (filters.status) searchParams.set('status', filters.status);
+  if (filters.needsReview) searchParams.set('needs_review', 'true');
+  const queryString = searchParams.toString();
+
   return useQuery({
-    queryKey: ['consent-requests', patientId ?? null],
+    queryKey: [
+      'consent-requests',
+      patientId ?? null,
+      filters.status ?? null,
+      filters.needsReview ?? false,
+    ],
     queryFn: () =>
       apiFetch<ConsentRequest[]>(
-        `/api/v1/consents/requests${patientId ? `?patient_id=${patientId}` : ''}`,
+        `/api/v1/consents/requests${queryString ? `?${queryString}` : ''}`,
       ),
   });
 }

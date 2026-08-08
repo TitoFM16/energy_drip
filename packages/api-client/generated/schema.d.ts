@@ -1833,8 +1833,15 @@ export interface components {
         /** NotificationMessageRead */
         NotificationMessageRead: {
             channel: components["schemas"]["NotificationChannel"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
             /** Delivered At */
             delivered_at: string | null;
+            /** Failure Reason */
+            failure_reason: string | null;
             /**
              * Id
              * Format: uuid
@@ -2828,6 +2835,8 @@ export interface operations {
         parameters: {
             query?: {
                 patient_id?: string | null;
+                status?: components["schemas"]["ConsentRequestStatus"] | null;
+                needs_review?: boolean;
             };
             header?: never;
             path?: never;

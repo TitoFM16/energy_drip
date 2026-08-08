@@ -6,6 +6,7 @@ from medical_api.api.dependencies import AuthenticatedUser, DbSession
 from medical_api.core.exceptions import NotFoundError
 from medical_api.core.security import require_roles
 from medical_api.modules.audit.service import AuditService
+from medical_api.modules.consents.models import ConsentRequestStatus
 from medical_api.modules.consents.repository import ConsentRepository, ConsentTemplateRepository
 from medical_api.modules.consents.schemas import (
     ConsentFormRead,
@@ -156,10 +157,19 @@ async def create_consent_request(
 
 @router.get("/requests", response_model=list[ConsentRequestRead])
 async def list_consent_requests(
-    user: AuthenticatedUser, session: DbSession, patient_id: uuid.UUID | None = None
+    user: AuthenticatedUser,
+    session: DbSession,
+    patient_id: uuid.UUID | None = None,
+    status: ConsentRequestStatus | None = None,
+    needs_review: bool = False,
 ) -> list[ConsentRequestRead]:
     service = ConsentService(ConsentRepository(session), session)
-    return await service.list_requests(user.organization_id, patient_id)
+    return await service.list_requests(
+        user.organization_id,
+        patient_id,
+        status=status,
+        needs_review=needs_review,
+    )
 
 
 @router.get("/requests/{request_id}", response_model=ConsentRequestDetail)

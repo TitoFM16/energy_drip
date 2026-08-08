@@ -1809,6 +1809,11 @@
           "channel": {
             "$ref": "#/components/schemas/NotificationChannel"
           },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
           "delivered_at": {
             "anyOf": [
               {
@@ -1820,6 +1825,17 @@
               }
             ],
             "title": "Delivered At"
+          },
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
           },
           "id": {
             "format": "uuid",
@@ -1856,6 +1872,8 @@
           "status",
           "recipient",
           "template_key",
+          "failure_reason",
+          "created_at",
           "sent_at",
           "delivered_at"
         ],
@@ -3747,6 +3765,32 @@
                 }
               ],
               "title": "Patient Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ConsentRequestStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "needs_review",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Needs Review",
+              "type": "boolean"
             }
           }
         ],

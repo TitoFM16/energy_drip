@@ -9,11 +9,13 @@ from medical_api.modules.consents.models import (
     ConsentQuestion,
     ConsentQuestionOption,
     ConsentRequest,
+    ConsentRequestStatus,
     ConsentRule,
     ConsentSignature,
     ConsentSubmission,
     ConsentTemplate,
     ConsentTemplateVersion,
+    EligibilityResult,
 )
 
 
@@ -87,12 +89,29 @@ class ConsentRepository:
         return await self.session.get(ConsentTemplateVersion, template_version_id)
 
     async def list_requests(
-        self, organization_id: uuid.UUID, patient_id: uuid.UUID | None = None
+        self,
+        organization_id: uuid.UUID,
+        patient_id: uuid.UUID | None = None,
+        status: ConsentRequestStatus | None = None,
+        needs_review: bool = False,
     ) -> list[ConsentRequest]:
         conditions = [ConsentRequest.organization_id == organization_id]
         if patient_id is not None:
             conditions.append(ConsentRequest.patient_id == patient_id)
-        stmt = select(ConsentRequest).where(*conditions).order_by(ConsentRequest.created_at.desc())
+        if status is not None:
+            conditions.append(ConsentRequest.status == status)
+
+        stmt = select(ConsentRequest)
+        if needs_review:
+            stmt = stmt.join(
+                ConsentSubmission,
+                ConsentSubmission.consent_request_id == ConsentRequest.id,
+            )
+            conditions.append(
+                ConsentSubmission.eligibility_result == EligibilityResult.REQUIRES_MANUAL_REVIEW
+            )
+
+        stmt = stmt.where(*conditions).order_by(ConsentRequest.created_at.desc())
         return list((await self.session.execute(stmt)).scalars().all())
 
     async def get_submission_by_request(
