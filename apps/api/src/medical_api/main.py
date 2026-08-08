@@ -2,13 +2,18 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from medical_api.api.error_handlers import register_error_handlers
 from medical_api.api.router import api_router
 from medical_api.core.config import get_settings
 from medical_api.core.database import engine
 from medical_api.core.logging import configure_logging
-from medical_api.core.middleware import RequestContextMiddleware
+from medical_api.core.middleware import (
+    BodySizeLimitMiddleware,
+    RequestContextMiddleware,
+    SecurityHeadersMiddleware,
+)
 from medical_api.core.rate_limit import get_redis
 from medical_api.core.schema_check import assert_schema_matches_head
 from medical_api.integrations.object_storage.client import ensure_bucket_exists
@@ -37,6 +42,16 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Medical Platform API", version="0.1.0", lifespan=lifespan)
 
+# Middleware added earliest ends up outermost (Starlette wraps in reverse
+# registration order) — the two raw rejection checks go first so an
+# oversized body or a spoofed Host header is refused before CORS, routing,
+# or anything else does any work.
+app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.max_request_body_bytes)
+if settings.is_production:
+    # Only enforced in production — see allowed_hosts' comment in
+    # core/config.py for why a wrong/missing value here must never risk
+    # breaking local dev, CI, or the E2E stack.
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -45,8 +60,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 # Populates request_id/ip/user_agent for AuditService; added after
-# CORSMiddleware so CORS stays outermost and still handles preflight OPTIONS.
+# CORSMiddleware so CORS stays outermost (of these two) and still handles
+# preflight OPTIONS.
 app.add_middleware(RequestContextMiddleware)
+app.add_middleware(SecurityHeadersMiddleware, is_production=settings.is_production)
 
 register_error_handlers(app)
 app.include_router(api_router)

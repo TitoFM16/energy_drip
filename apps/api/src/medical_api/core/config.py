@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     whatsapp_webhook_verify_token: str = ""
 
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174"]
+    # Only enforced when environment=production (see main.py) — a wrong or
+    # missing value here would otherwise risk breaking every non-production
+    # environment (local dev, CI's docker-compose stack, the E2E suite),
+    # which all reach the API through different hostnames.
+    allowed_hosts: list[str] = []
+    max_request_body_bytes: int = 10_000_000
 
     # Base URL of the patient-web app, used to build the consent link sent
     # over WhatsApp (`{patient_web_base_url}/c/{token}` — see

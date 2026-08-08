@@ -53,7 +53,13 @@ settings = get_settings()
 # office (or a CI run) getting locked out by ordinary concurrent use.
 _LOGIN_RATE_LIMIT = 30
 _LOGIN_RATE_WINDOW_SECONDS = 300
-_INVITE_ACCEPT_RATE_LIMIT = 20
+# Same headroom reasoning as login above: every E2E spec's bootstrapClinic
+# accepts one invite, so a single suite run is already ~10 real calls from
+# one IP, and a couple of manual reruns within the same hour (routine while
+# developing) stack on top of each other since this window is much longer
+# than login's. An initial 20/hour looked generous in isolation but wasn't
+# once measured against actual repeated local verification.
+_INVITE_ACCEPT_RATE_LIMIT = 60
 _INVITE_ACCEPT_RATE_WINDOW_SECONDS = 3600
 _PASSWORD_RESET_REQUEST_RATE_LIMIT = 5
 _PASSWORD_RESET_REQUEST_RATE_WINDOW_SECONDS = 3600

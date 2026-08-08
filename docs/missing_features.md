@@ -318,6 +318,13 @@ UPDATE`) so a concurrent double-submission of the same token is
   readiness wait never confirmed either worker process had started before
   running tests. See the "End-to-end tests" section's environment-issues
   note for the full writeup.
+- Closed the security-headers/trusted-host/body-size-limit slice of "API
+  and application security hardening": every response now carries
+  `X-Content-Type-Options`/`X-Frame-Options`/`Referrer-Policy` (plus HSTS
+  in production), an oversized request body is rejected with 413 before
+  any route reads it, and `TrustedHostMiddleware` is enforced in
+  production. See "API and application security hardening" below for the
+  full writeup.
 
 ## Priority levels
 
@@ -1723,7 +1730,39 @@ router is actually wired to a 429 rather than repeating real calls against
 shared Redis state); live curl against the running `docker compose` stack
 confirmed 10 real bad logins succeed as 401 and the 11th (pre-retune) /
 31st (post-retune) returns 429; two full Playwright E2E runs back-to-back
-passed cleanly after the retune.
+passed cleanly after the retune. (`invite_accept`'s limit needed a second
+retune for the same reason, from 20/hour to 60/hour — its window is an hour
+long, not five minutes, so it accumulates across several manual local E2E
+reruns during a single work session, not just within one run; see the
+"End-to-end tests" section's environment-issues note.)
+
+Also closed the security-headers/trusted-host/body-size-limit bullets below:
+`core/middleware.py` gained `SecurityHeadersMiddleware` (sets
+`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` on every
+response; adds `Strict-Transport-Security` only when `environment=production`,
+since sending it over plain HTTP in local dev would make a browser cache an
+HTTPS-only policy for `localhost`) and `BodySizeLimitMiddleware` (rejects any
+request whose declared `Content-Length` exceeds 10MB — `settings.max_request_body_bytes`
+— before Starlette starts reading it; doesn't catch a chunked-encoded body with
+no declared length, which needs a reverse-proxy-level limit this repo doesn't
+own yet). `TrustedHostMiddleware` (Starlette's own) is wired in only when
+`environment=production`, reading from a new `settings.allowed_hosts` (empty
+by default) — gated the same way as `ensure_bucket_exists()` and the
+`register-organization` production block elsewhere in this file, so a wrong
+or missing value can never risk breaking local dev, CI, or the E2E stack the
+way it would if enforced everywhere. A Content-Security-Policy is
+deliberately not included — it needs to enumerate each frontend's own
+script/style/connect sources and stays open (see remaining criteria below).
+
+Verified: 4 new pytest cases in `apps/api/tests/test_security_middleware.py`
+(baseline headers present on a real response, HSTS only when configured for
+production, oversized body rejected with 413 before reaching a route, an
+unrecognized Host rejected with 400); live curl against the running
+`docker compose` stack confirmed both the headers and the 413 rejection;
+four full Playwright E2E runs (staff-web/patient-web/landing all still work
+under CORS + the new headers) passed, other than the rate-limit-window
+issue above which is a pre-existing local-rerun caveat, not something this
+change introduced.
 
 Remaining acceptance criteria:
 
@@ -1732,8 +1771,8 @@ Remaining acceptance criteria:
 - Rate limiting for consent links and webhooks (public booking and the auth
   endpoints above are done; the public consent-form token lookup and
   submission endpoints, and the WhatsApp webhook, still have none).
-- Secure CORS and trusted-host configuration per environment.
-- Security headers and HTTPS-only production cookies or tokens.
+- A Content-Security-Policy (CORS/trusted-host/security-headers/body-size
+  are done — see above).
 - Input-size limits and upload validation.
 - Dependency and container vulnerability scanning.
 - Protection against sensitive-data leakage in logs and error responses.
@@ -1969,7 +2008,7 @@ initially had a real locator bug of its own — an unscoped `li` +
 "Versión 1" text above it as well as the intended document row, making
 the test flaky independent of the deliberate break; fixed by scoping to
 the document list specifically before doing the break/revert drill).
-Also hit three real environment issues
+Also hit four real environment issues
 while building this that are worth knowing about if these start flaking:
 availability-rule time windows are interpreted as UTC and slots are
 generated on a grid aligned to the rule's `start_time` — a narrow window
@@ -1996,7 +2035,16 @@ built, resource-constrained CI runner to blow past the test's 20s
 actually be ready" step by polling each worker's own startup log line
 (`outbox_consumer.started`, `Worker process is ready for action.`) before
 `Run end-to-end tests`, the same way the API step already polls
-`/health/ready` instead of just "is the port open."
+`/health/ready` instead of just "is the port open."); and, since login and
+invite-accept became rate-limited (see "API and application security
+hardening"), the same "shared IP, repeated local reruns" pattern as public
+booking applies to those too — every spec logs in and bootstrapClinic
+accepts one invite, so several manual full-suite reruns in a short window
+can trip `login:<ip>` (5min window) or `invite_accept:<ip>` (1hr window)
+locally the same way `redis-cli FLUSHDB` clears it for booking. This is
+expected and specific to repeated _local_ reruns — CI only runs the suite
+once per push against a freshly created Redis, so it never accumulates
+across runs the way a local dev loop does.
 
 Acceptance criteria:
 
