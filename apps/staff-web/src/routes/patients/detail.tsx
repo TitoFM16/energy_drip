@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import { usePatient } from '../../features/patients/use-patient';
 import { useUpdatePatient } from '../../features/patients/use-update-patient';
 import { PageHeading } from '../../shared/components/app-shell';
+import { CommunicationPreferencesSection } from './communication-preferences-section';
 import { ConsentRequestsSection } from './consent-requests-section';
 import { MedicalRecordSection } from './medical-record-section';
 import { TreatmentPlansSection } from './treatment-plans-section';
@@ -112,6 +113,7 @@ export function PatientDetailPage() {
         </div>
       </form>
 
+      <CommunicationPreferencesSection patientId={patient.id} />
       <MedicalRecordSection patientId={patient.id} />
       <TreatmentPlansSection patientId={patient.id} />
       <ConsentRequestsSection patientId={patient.id} />

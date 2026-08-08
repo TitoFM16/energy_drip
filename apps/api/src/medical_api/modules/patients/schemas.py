@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel, EmailStr
 
@@ -31,5 +31,20 @@ class PatientRead(BaseModel):
     phone_number: str | None
     email: str | None
     is_active: bool
+    whatsapp_opt_out: bool
+    whatsapp_opt_out_at: datetime | None
+    whatsapp_opt_in_at: datetime | None
 
     model_config = {"from_attributes": True}
+
+
+class PatientCommunicationPreferencesUpdate(BaseModel):
+    whatsapp_opt_out: bool
+
+
+class PatientCommunicationPreferencesRead(BaseModel):
+    patient_id: uuid.UUID
+    phone_number: str | None
+    whatsapp_opt_out: bool
+    whatsapp_opt_out_at: datetime | None
+    whatsapp_opt_in_at: datetime | None

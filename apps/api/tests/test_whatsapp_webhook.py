@@ -1,7 +1,14 @@
 import hashlib
 import hmac
 
-from medical_api.integrations.whatsapp.webhook import extract_status_updates, verify_signature
+import pytest
+
+from medical_api.integrations.whatsapp.webhook import (
+    extract_inbound_messages,
+    extract_status_updates,
+    is_opt_out_message,
+    verify_signature,
+)
 
 APP_SECRET = "test-app-secret"
 
@@ -119,3 +126,62 @@ class TestExtractStatusUpdates:
 
     def test_ignores_a_completely_unrelated_payload_shape(self):
         assert extract_status_updates({}) == []
+
+
+class TestInboundMessages:
+    def test_extracts_inbound_text_message(self):
+        payload = {
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "messages": [
+                                    {
+                                        "from": "573001112233",
+                                        "id": "wamid.inbound-1",
+                                        "type": "text",
+                                        "text": {"body": "BAJA"},
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+        assert extract_inbound_messages(payload) == [
+            {
+                "provider_message_id": "wamid.inbound-1",
+                "sender_phone_number": "573001112233",
+                "body": "BAJA",
+            }
+        ]
+
+    def test_skips_non_text_messages(self):
+        payload = {
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "messages": [
+                                    {"from": "573001112233", "id": "wamid.image", "type": "image"}
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+        assert extract_inbound_messages(payload) == []
+
+    @pytest.mark.parametrize(
+        "body",
+        ["STOP", "stop", "BAJA", "Quiero cancelar", "NO MOLESTAR", "no   molestar, gracias"],
+    )
+    def test_detects_colombian_and_english_opt_out_keywords(self, body):
+        assert is_opt_out_message(body) is True
+
+    def test_does_not_treat_unrelated_text_as_opt_out(self):
+        assert is_opt_out_message("Confirmo mi cita") is False

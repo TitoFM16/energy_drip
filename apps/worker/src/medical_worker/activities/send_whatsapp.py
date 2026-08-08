@@ -10,7 +10,12 @@ from medical_api.integrations.whatsapp.client import (
     WhatsAppNotConfiguredError,
     WhatsAppRejectedError,
 )
-from medical_api.modules.notifications.models import NotificationMessage, NotificationStatus
+from medical_api.modules.notifications.models import (
+    NotificationCategory,
+    NotificationMessage,
+    NotificationStatus,
+)
+from medical_api.modules.patients.repository import PatientRepository
 from medical_worker import broker  # noqa: F401  (registers the Redis broker)
 from medical_worker.database import async_session_factory
 
@@ -33,6 +38,9 @@ def send_whatsapp_message(
 async def _send(
     to: str, template_name: str, params: list[str], notification_message_id: str | None
 ) -> None:
+    if notification_message_id and await _suppress_opted_out_marketing(notification_message_id):
+        return
+
     client = WhatsAppClient()
     try:
         message_id = await client.send_template_message(to, template_name, params)
@@ -53,6 +61,36 @@ async def _send(
     logger.info("whatsapp.sent", to=to, template=template_name, provider_message_id=message_id)
     if notification_message_id:
         await _mark_sent(notification_message_id, message_id)
+
+
+async def _suppress_opted_out_marketing(notification_message_id: str) -> bool:
+    """Return before provider delivery only for nonessential marketing.
+
+    Appointment confirmations/reminders and consent links are categorized as
+    transactional and intentionally bypass the marketing opt-out.
+    """
+    async with async_session_factory() as session:
+        message = await session.get(NotificationMessage, uuid.UUID(notification_message_id))
+        if message is None:
+            logger.warning("whatsapp.notification_message_missing", id=notification_message_id)
+            return False
+        if message.category != NotificationCategory.MARKETING:
+            return False
+
+        patient = await PatientRepository(session).get_by_phone_number(
+            message.organization_id, message.recipient
+        )
+        if patient is None or not patient.whatsapp_opt_out:
+            return False
+
+        message.status = NotificationStatus.SUPPRESSED
+        await session.commit()
+        logger.info(
+            "whatsapp.marketing_suppressed",
+            notification_message_id=notification_message_id,
+            patient_id=str(patient.id),
+        )
+        return True
 
 
 async def _mark_sent(notification_message_id: str, provider_message_id: str) -> None:

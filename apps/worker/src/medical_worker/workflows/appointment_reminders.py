@@ -16,7 +16,11 @@ import dramatiq
 import structlog
 from sqlalchemy import select
 
-from medical_api.modules.notifications.models import NotificationChannel, NotificationMessage
+from medical_api.modules.notifications.models import (
+    NotificationCategory,
+    NotificationChannel,
+    NotificationMessage,
+)
 from medical_api.modules.patients.repository import PatientRepository
 from medical_api.modules.scheduling.models import Appointment, AppointmentStatus
 from medical_worker import broker  # noqa: F401  (registers the Redis broker)
@@ -79,6 +83,7 @@ async def _check_window(label: str, lead_time: timedelta) -> None:
             message = NotificationMessage(
                 organization_id=appointment.organization_id,
                 channel=NotificationChannel.WHATSAPP,
+                category=NotificationCategory.TRANSACTIONAL,
                 recipient=patient.phone_number,
                 template_key=template_key,
                 payload={"appointment_id": str(appointment.id)},

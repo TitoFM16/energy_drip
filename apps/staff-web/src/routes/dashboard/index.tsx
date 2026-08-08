@@ -36,6 +36,7 @@ const NOTIFICATION_LABELS: Record<NotificationStatus, string> = {
   sent: 'Enviada',
   delivered: 'Entregada',
   failed: 'Fallida',
+  suppressed: 'Suprimida',
 };
 
 const NOTIFICATION_VARIANTS: Record<
@@ -46,6 +47,7 @@ const NOTIFICATION_VARIANTS: Record<
   sent: 'neutral',
   delivered: 'success',
   failed: 'danger',
+  suppressed: 'warning',
 };
 
 function operationalRange() {

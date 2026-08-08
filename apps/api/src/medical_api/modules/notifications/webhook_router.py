@@ -1,13 +1,21 @@
 import hmac
+from datetime import UTC, datetime
 
 import structlog
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 
 from medical_api.api.dependencies import DbSession
 from medical_api.core.config import get_settings
-from medical_api.integrations.whatsapp.webhook import extract_status_updates, verify_signature
+from medical_api.integrations.whatsapp.webhook import (
+    extract_inbound_messages,
+    extract_status_updates,
+    is_opt_out_message,
+    verify_signature,
+)
+from medical_api.modules.audit.service import AuditService
 from medical_api.modules.notifications.service import enqueue_event
 from medical_api.modules.organizations.repository import OrganizationRepository
+from medical_api.modules.patients.repository import PatientRepository
 
 logger = structlog.get_logger(__name__)
 settings = get_settings()
@@ -59,7 +67,12 @@ async def receive_whatsapp_webhook(request: Request, session: DbSession) -> dict
         return {"status": "ignored"}
 
     updates = extract_status_updates(payload)
-    if updates:
+    opt_out_messages = [
+        message
+        for message in extract_inbound_messages(payload)
+        if is_opt_out_message(message["body"])
+    ]
+    if updates or opt_out_messages:
         # This webhook is scoped by Meta's WhatsApp Business Account, not
         # by our own organization_id — but this product has exactly one
         # organization (see docs/missing_features.md's single-clinic scope
@@ -73,6 +86,31 @@ async def receive_whatsapp_webhook(request: Request, session: DbSession) -> dict
                     organization_id=organization.id,
                     event_type="whatsapp.delivery_status",
                     payload=dict(update),
+                )
+            processed_patients: set[str] = set()
+            patient_repository = PatientRepository(session)
+            for message in opt_out_messages:
+                patient = await patient_repository.get_by_phone_number(
+                    organization.id, message["sender_phone_number"]
+                )
+                if (
+                    patient is None
+                    or patient.whatsapp_opt_out
+                    or str(patient.id) in processed_patients
+                ):
+                    continue
+                patient.whatsapp_opt_out = True
+                patient.whatsapp_opt_out_at = datetime.now(UTC)
+                processed_patients.add(str(patient.id))
+                await AuditService(session).record(
+                    organization_id=organization.id,
+                    actor_user_id=None,
+                    action="patient.whatsapp_opt_out",
+                    resource_type="patient",
+                    resource_id=str(patient.id),
+                    ip_address=request.client.host if request.client else None,
+                    user_agent=request.headers.get("user-agent"),
+                    metadata={"provider_message_id": message["provider_message_id"]},
                 )
             await session.commit()
 

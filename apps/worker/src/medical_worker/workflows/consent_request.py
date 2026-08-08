@@ -9,7 +9,11 @@ from medical_api.core.config import get_settings
 from medical_api.modules.consents.models import ConsentTemplate, ConsentTemplateVersion
 from medical_api.modules.consents.repository import ConsentRepository
 from medical_api.modules.consents.service import ConsentService
-from medical_api.modules.notifications.models import NotificationChannel, NotificationMessage
+from medical_api.modules.notifications.models import (
+    NotificationCategory,
+    NotificationChannel,
+    NotificationMessage,
+)
 from medical_api.modules.patients.repository import PatientRepository
 from medical_worker import broker  # noqa: F401  (registers the Redis broker)
 from medical_worker.activities.send_whatsapp import send_whatsapp_message
@@ -61,6 +65,7 @@ async def _start(
         message = NotificationMessage(
             organization_id=organization_id,
             channel=NotificationChannel.WHATSAPP,
+            category=NotificationCategory.TRANSACTIONAL,
             recipient=patient.phone_number,
             template_key="consent_link",
             payload={"appointment_id": str(appointment_id), "patient_id": str(patient_id)},

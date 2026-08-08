@@ -147,6 +147,11 @@ therefore no longer tracked as wholly missing:
   pooled DB engine meant to be sized for one long-lived event loop caused
   intermittent asyncpg "different loop" crashes — worker actors now use a
   separate NullPool-backed engine (`apps/worker/src/medical_worker/database.py`).
+- Patient communication preferences now record first phone-number opt-in
+  evidence, accept WhatsApp STOP/BAJA/CANCELAR/NO MOLESTAR opt-outs, audit
+  patient- and staff-initiated changes, and suppress opted-out marketing while
+  preserving transactional appointment/consent delivery. See "Patient
+  communication preferences and opt-out" below.
 - Added [`docs/whatsapp-setup.md`](whatsapp-setup.md): a step-by-step
   operator runbook for the Meta account/template/webhook setup that only
   the clinic owner can do — see "Notification automation" above.
@@ -1086,15 +1091,34 @@ Acceptance criteria:
 - Resend or escalate when delivery fails.
 - Stop reminders when consent is completed, invalidated, or replaced.
 
-### P1: Patient communication preferences and opt-out
+### P1: Patient communication preferences and opt-out — done
 
-Acceptance criteria:
+Patients now carry `whatsapp_opt_out`, `whatsapp_opt_out_at`, and
+`whatsapp_opt_in_at`. The first time clinic staff records a phone number through
+patient create/update, the API automatically preserves that timestamp as the
+current product's evidence of authorization to contact the patient. This is an
+explicit simplification: it records the operational consent touchpoint but is
+not a signed consent form or proof that required disclosures were presented.
+A jurisdiction-specific compliance review must revisit the evidence and UX
+before production use.
 
-- Record channel preferences and legally required opt-in evidence.
-- Process WhatsApp opt-out signals.
-- Prevent nonessential sends after opt-out.
-- Distinguish transactional/clinical messages from marketing messages.
-- Record preference changes in the audit trail.
+The signed Meta webhook now parses inbound text messages as well as delivery
+statuses. Case-insensitive `STOP`, `BAJA`, `CANCELAR`, and `NO MOLESTAR`
+signals match the sender to the organization's patient by normalized phone
+number, set the opt-out flag/timestamp, and append a
+`patient.whatsapp_opt_out` audit event with no staff actor. Patient detail also
+has a small read-only-status/manual-toggle section backed by an
+organization-scoped endpoint; staff changes append
+`patient.whatsapp_opt_out.updated` with the authenticated actor.
+
+Notification messages are explicitly categorized as `transactional` or
+`marketing`, and can terminate as `suppressed`. All four current WhatsApp
+templates (confirmation, 24-hour reminder, 2-hour reminder, and consent link)
+are explicitly transactional. The worker consults the patient preference
+before provider delivery and suppresses only marketing for opted-out patients;
+clinical/transactional traffic intentionally continues. Real-PostgreSQL tests
+cover webhook opt-out/audit behavior, cross-organization manual-toggle access,
+marketing suppression, and transactional delivery after opt-out.
 
 ### P2: Outbox reliability and idempotency
 

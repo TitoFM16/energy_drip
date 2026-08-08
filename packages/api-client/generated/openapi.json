@@ -1967,6 +1967,14 @@
         "title": "MedicationUpdate",
         "type": "object"
       },
+      "NotificationCategory": {
+        "enum": [
+          "transactional",
+          "marketing"
+        ],
+        "title": "NotificationCategory",
+        "type": "string"
+      },
       "NotificationChannel": {
         "enum": [
           "whatsapp",
@@ -1978,6 +1986,9 @@
       },
       "NotificationMessageRead": {
         "properties": {
+          "category": {
+            "$ref": "#/components/schemas/NotificationCategory"
+          },
           "channel": {
             "$ref": "#/components/schemas/NotificationChannel"
           },
@@ -2041,6 +2052,7 @@
         "required": [
           "id",
           "channel",
+          "category",
           "status",
           "recipient",
           "template_key",
@@ -2057,7 +2069,8 @@
           "pending",
           "sent",
           "delivered",
-          "failed"
+          "failed",
+          "suppressed"
         ],
         "title": "NotificationStatus",
         "type": "string"
@@ -2118,6 +2131,76 @@
           "detail"
         ],
         "title": "PasswordResetRequestResponse",
+        "type": "object"
+      },
+      "PatientCommunicationPreferencesRead": {
+        "properties": {
+          "patient_id": {
+            "format": "uuid",
+            "title": "Patient Id",
+            "type": "string"
+          },
+          "phone_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone Number"
+          },
+          "whatsapp_opt_in_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Whatsapp Opt In At"
+          },
+          "whatsapp_opt_out": {
+            "title": "Whatsapp Opt Out",
+            "type": "boolean"
+          },
+          "whatsapp_opt_out_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Whatsapp Opt Out At"
+          }
+        },
+        "required": [
+          "patient_id",
+          "phone_number",
+          "whatsapp_opt_out",
+          "whatsapp_opt_out_at",
+          "whatsapp_opt_in_at"
+        ],
+        "title": "PatientCommunicationPreferencesRead",
+        "type": "object"
+      },
+      "PatientCommunicationPreferencesUpdate": {
+        "properties": {
+          "whatsapp_opt_out": {
+            "title": "Whatsapp Opt Out",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "whatsapp_opt_out"
+        ],
+        "title": "PatientCommunicationPreferencesUpdate",
         "type": "object"
       },
       "PatientCreate": {
@@ -2252,6 +2335,34 @@
               }
             ],
             "title": "Phone Number"
+          },
+          "whatsapp_opt_in_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Whatsapp Opt In At"
+          },
+          "whatsapp_opt_out": {
+            "title": "Whatsapp Opt Out",
+            "type": "boolean"
+          },
+          "whatsapp_opt_out_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Whatsapp Opt Out At"
           }
         },
         "required": [
@@ -2263,7 +2374,10 @@
           "date_of_birth",
           "phone_number",
           "email",
-          "is_active"
+          "is_active",
+          "whatsapp_opt_out",
+          "whatsapp_opt_out_at",
+          "whatsapp_opt_in_at"
         ],
         "title": "PatientRead",
         "type": "object"
@@ -5522,6 +5636,110 @@
         "summary": "List Clinical Notes",
         "tags": [
           "clinical-records"
+        ]
+      }
+    },
+    "/api/v1/patients/{patient_id}/communication-preferences": {
+      "get": {
+        "operationId": "get_communication_preferences_api_v1_patients__patient_id__communication_preferences_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Patient Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientCommunicationPreferencesRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Communication Preferences",
+        "tags": [
+          "patients"
+        ]
+      },
+      "patch": {
+        "operationId": "update_communication_preferences_api_v1_patients__patient_id__communication_preferences_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Patient Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatientCommunicationPreferencesUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientCommunicationPreferencesRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Update Communication Preferences",
+        "tags": [
+          "patients"
         ]
       }
     },

@@ -1,7 +1,7 @@
 import uuid
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from medical_api.core.database import (
@@ -22,6 +22,13 @@ class Patient(Base, UUIDPrimaryKeyMixin, TimestampMixin, OrganizationScopedMixin
     phone_number: Mapped[str | None]
     email: Mapped[str | None]
     is_active: Mapped[bool] = mapped_column(default=True)
+    whatsapp_opt_out: Mapped[bool] = mapped_column(default=False)
+    whatsapp_opt_out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Product simplification: recording a phone number through the staff
+    # patient workflow is currently the only consent-to-contact touchpoint,
+    # so its first occurrence is retained as WhatsApp opt-in evidence. This
+    # is not a signed consent and must be revisited during compliance review.
+    whatsapp_opt_in_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class PatientContact(Base, UUIDPrimaryKeyMixin):

@@ -801,6 +801,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/patients/{patient_id}/communication-preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Communication Preferences */
+        get: operations["get_communication_preferences_api_v1_patients__patient_id__communication_preferences_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Communication Preferences */
+        patch: operations["update_communication_preferences_api_v1_patients__patient_id__communication_preferences_patch"];
+        trace?: never;
+    };
     "/api/v1/patients/{patient_id}/conditions": {
         parameters: {
             query?: never;
@@ -2021,12 +2039,18 @@ export interface components {
             name?: string | null;
         };
         /**
+         * NotificationCategory
+         * @enum {string}
+         */
+        NotificationCategory: "transactional" | "marketing";
+        /**
          * NotificationChannel
          * @enum {string}
          */
         NotificationChannel: "whatsapp" | "sms" | "email";
         /** NotificationMessageRead */
         NotificationMessageRead: {
+            category: components["schemas"]["NotificationCategory"];
             channel: components["schemas"]["NotificationChannel"];
             /**
              * Created At
@@ -2054,7 +2078,7 @@ export interface components {
          * NotificationStatus
          * @enum {string}
          */
-        NotificationStatus: "pending" | "sent" | "delivered" | "failed";
+        NotificationStatus: "pending" | "sent" | "delivered" | "failed" | "suppressed";
         /** PasswordResetConfirm */
         PasswordResetConfirm: {
             /** New Password */
@@ -2076,6 +2100,27 @@ export interface components {
             detail: string;
             /** Token */
             token?: string | null;
+        };
+        /** PatientCommunicationPreferencesRead */
+        PatientCommunicationPreferencesRead: {
+            /**
+             * Patient Id
+             * Format: uuid
+             */
+            patient_id: string;
+            /** Phone Number */
+            phone_number: string | null;
+            /** Whatsapp Opt In At */
+            whatsapp_opt_in_at: string | null;
+            /** Whatsapp Opt Out */
+            whatsapp_opt_out: boolean;
+            /** Whatsapp Opt Out At */
+            whatsapp_opt_out_at: string | null;
+        };
+        /** PatientCommunicationPreferencesUpdate */
+        PatientCommunicationPreferencesUpdate: {
+            /** Whatsapp Opt Out */
+            whatsapp_opt_out: boolean;
         };
         /** PatientCreate */
         PatientCreate: {
@@ -2118,6 +2163,12 @@ export interface components {
             organization_id: string;
             /** Phone Number */
             phone_number: string | null;
+            /** Whatsapp Opt In At */
+            whatsapp_opt_in_at: string | null;
+            /** Whatsapp Opt Out */
+            whatsapp_opt_out: boolean;
+            /** Whatsapp Opt Out At */
+            whatsapp_opt_out_at: string | null;
         };
         /** PatientUpdate */
         PatientUpdate: {
@@ -4005,6 +4056,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ClinicalNoteRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_communication_preferences_api_v1_patients__patient_id__communication_preferences_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                patient_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatientCommunicationPreferencesRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_communication_preferences_api_v1_patients__patient_id__communication_preferences_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                patient_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatientCommunicationPreferencesUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatientCommunicationPreferencesRead"];
                 };
             };
             /** @description Validation Error */

@@ -6,13 +6,13 @@ without live Meta credentials:
 - `verify_signature`: confirms an inbound POST really came from Meta (HMAC
   over the raw body using the App Secret — a different secret from the
   access token used to *send* messages).
-- `extract_status_updates`: normalizes Meta's nested, batchable webhook
-  payload shape into a flat list of status updates the rest of the app can
-  act on without knowing Meta's wire format.
+- `extract_status_updates` / `extract_inbound_messages`: normalize Meta's
+  nested, batchable webhook payload into flat application-level records.
 """
 
 import hashlib
 import hmac
+import re
 from typing import Any, TypedDict
 
 # Meta's message-status values, mapped to this app's own NotificationStatus.
@@ -30,6 +30,15 @@ class StatusUpdate(TypedDict):
     provider_message_id: str
     status: str  # one of NotificationStatus's values
     failure_reason: str | None
+
+
+class InboundMessage(TypedDict):
+    provider_message_id: str
+    sender_phone_number: str
+    body: str
+
+
+_OPT_OUT_PATTERN = re.compile(r"\b(?:stop|baja|cancelar|no\s+molestar)\b", re.IGNORECASE)
 
 
 def verify_signature(raw_body: bytes, signature_header: str | None, app_secret: str) -> bool:
@@ -77,3 +86,28 @@ def extract_status_updates(payload: dict[str, Any]) -> list[StatusUpdate]:
                     )
                 )
     return updates
+
+
+def extract_inbound_messages(payload: dict[str, Any]) -> list[InboundMessage]:
+    """Flatten inbound text messages, ignoring unsupported/malformed events."""
+    messages: list[InboundMessage] = []
+    for entry in payload.get("entry", []):
+        for change in entry.get("changes", []):
+            for message in change.get("value", {}).get("messages", []):
+                message_id = message.get("id")
+                sender = message.get("from")
+                body = (message.get("text") or {}).get("body")
+                if not message_id or not sender or not isinstance(body, str):
+                    continue
+                messages.append(
+                    InboundMessage(
+                        provider_message_id=message_id,
+                        sender_phone_number=sender,
+                        body=body,
+                    )
+                )
+    return messages
+
+
+def is_opt_out_message(body: str) -> bool:
+    return _OPT_OUT_PATTERN.search(body.strip()) is not None

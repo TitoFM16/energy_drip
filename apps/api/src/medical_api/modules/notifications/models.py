@@ -25,6 +25,12 @@ class NotificationStatus(StrEnum):
     SENT = "sent"
     DELIVERED = "delivered"
     FAILED = "failed"
+    SUPPRESSED = "suppressed"
+
+
+class NotificationCategory(StrEnum):
+    TRANSACTIONAL = "transactional"
+    MARKETING = "marketing"
 
 
 class OutboxEvent(Base, UUIDPrimaryKeyMixin, OrganizationScopedMixin):
@@ -49,6 +55,9 @@ class NotificationMessage(Base, UUIDPrimaryKeyMixin, TimestampMixin, Organizatio
     __tablename__ = "notification_messages"
 
     channel: Mapped[NotificationChannel]
+    category: Mapped[NotificationCategory] = mapped_column(
+        default=NotificationCategory.TRANSACTIONAL
+    )
     status: Mapped[NotificationStatus] = mapped_column(default=NotificationStatus.PENDING)
     recipient: Mapped[str]
     template_key: Mapped[str] = mapped_column(String(100))
