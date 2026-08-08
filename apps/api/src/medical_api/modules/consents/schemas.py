@@ -2,10 +2,11 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from medical_api.modules.consents.models import (
     ConsentRequestStatus,
+    ConsentReviewDecision,
     EligibilityResult,
     QuestionType,
 )
@@ -100,6 +101,27 @@ class ConsentSubmissionResult(BaseModel):
     eligibility_result: EligibilityResult
 
 
+class ConsentSubmissionReviewCreate(BaseModel):
+    decision: ConsentReviewDecision
+    rationale: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("rationale")
+    @classmethod
+    def strip_rationale(cls, rationale: str) -> str:
+        rationale = rationale.strip()
+        if not rationale:
+            raise ValueError("Rationale must not be blank")
+        return rationale
+
+
+class ConsentSubmissionReviewRead(BaseModel):
+    decision: ConsentReviewDecision
+    rationale: str
+    reviewed_by_user_id: uuid.UUID
+    reviewed_by_name: str
+    reviewed_at: datetime
+
+
 class ConsentRequestInvalidate(BaseModel):
     reason: str
 
@@ -141,6 +163,11 @@ class ConsentSubmissionRead(BaseModel):
     submitted_at: datetime
     timezone: str
     eligibility_result: EligibilityResult
+    review_decision: ConsentReviewDecision | None
+    review_rationale: str | None
+    reviewed_by_user_id: uuid.UUID | None
+    reviewed_by_name: str | None
+    reviewed_at: datetime | None
     has_signature: bool
     answers: list[ConsentAnswerRead]
     # Empty until the worker finishes generating the PDF (async, off the

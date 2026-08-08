@@ -1,5 +1,6 @@
-import { Badge, Button, ErrorText } from '@medical-platform/ui';
+import { Badge, Button, ErrorText, TextAreaField } from '@medical-platform/ui';
 import { useState } from 'react';
+import { useAuth } from '../../features/auth/use-auth';
 import {
   useConsentRequestDetail,
   useConsentRequests,
@@ -9,7 +10,12 @@ import type {
   ConsentRequestStatus,
   Document as ConsentDocument,
   EligibilityResult,
+  ConsentSubmission,
 } from '../../features/consents/types';
+import {
+  type ConsentReviewDecision,
+  useReviewDecision,
+} from '../../features/consents/use-review-decision';
 import {
   useDownloadDocument,
   useInvalidateDocument,
@@ -132,6 +138,8 @@ function RequestDetail({ requestId }: { requestId: string }) {
             ))}
           </ul>
 
+          <ReviewDecisionPanel submission={detail.submission} />
+
           {detail.submission.documents.length === 0 && (
             <p className="text-sm text-slate-500">
               Generando documento firmado... Actualiza en unos segundos.
@@ -154,6 +162,111 @@ function RequestDetail({ requestId }: { requestId: string }) {
         </>
       )}
     </div>
+  );
+}
+
+const REVIEW_DECISION_LABELS: Record<ConsentReviewDecision, string> = {
+  approved: 'Aprobado',
+  rejected: 'Rechazado',
+};
+
+function ReviewDecisionPanel({ submission }: { submission: ConsentSubmission }) {
+  const { user } = useAuth();
+  const review = useReviewDecision();
+  const [decision, setDecision] = useState<ConsentReviewDecision | ''>('');
+  const [rationale, setRationale] = useState('');
+
+  if (submission.eligibility_result !== 'requires_manual_review') return null;
+
+  if (
+    submission.review_decision &&
+    submission.review_rationale &&
+    submission.reviewed_by_user_id &&
+    submission.reviewed_at
+  ) {
+    return (
+      <div className="mb-4 rounded-lg border border-slate-200 p-3">
+        <div className="mb-2 flex items-center gap-2">
+          <h3 className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+            Decisión médica
+          </h3>
+          <Badge variant={submission.review_decision === 'approved' ? 'success' : 'danger'}>
+            {REVIEW_DECISION_LABELS[submission.review_decision]}
+          </Badge>
+        </div>
+        <p className="text-sm text-slate-700">{submission.review_rationale}</p>
+        <p className="mt-2 text-xs text-slate-500">
+          Revisado por {submission.reviewed_by_name ?? submission.reviewed_by_user_id} ·{' '}
+          {new Date(submission.reviewed_at).toLocaleString()}
+        </p>
+      </div>
+    );
+  }
+
+  const canReview = user?.roles.some((role) =>
+    ['organization_admin', 'medical_director', 'practitioner'].includes(role),
+  );
+  if (!canReview) {
+    return (
+      <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+        Esta respuesta requiere la decisión de un profesional autorizado.
+      </p>
+    );
+  }
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!decision || !rationale.trim()) return;
+    await review.mutateAsync({
+      submissionId: submission.id,
+      decision,
+      rationale: rationale.trim(),
+    });
+  }
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3"
+    >
+      <h3 className="mb-3 text-xs font-semibold tracking-wide text-amber-800 uppercase">
+        Registrar decisión médica
+      </h3>
+      <div className="flex flex-col gap-3">
+        <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
+          Decisión
+          <select
+            value={decision}
+            onChange={(event) => setDecision(event.target.value as ConsentReviewDecision | '')}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+          >
+            <option value="">Selecciona una decisión...</option>
+            <option value="approved">Aprobar tratamiento</option>
+            <option value="rejected">Rechazar tratamiento</option>
+          </select>
+        </label>
+        <TextAreaField
+          label="Justificación clínica"
+          value={rationale}
+          maxLength={2000}
+          rows={3}
+          onChange={(event) => setRationale(event.target.value)}
+        />
+        <Button
+          type="submit"
+          size="sm"
+          disabled={!decision || !rationale.trim() || review.isPending}
+        >
+          {review.isPending ? 'Registrando...' : 'Registrar decisión'}
+        </Button>
+        {review.isError && (
+          <ErrorText>
+            No se pudo registrar la decisión. Actualiza el detalle para confirmar que aún esté
+            pendiente.
+          </ErrorText>
+        )}
+      </div>
+    </form>
   );
 }
 

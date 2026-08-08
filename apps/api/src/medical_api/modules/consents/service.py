@@ -19,10 +19,12 @@ from medical_api.modules.consents.models import (
     ConsentQuestionOption,
     ConsentRequest,
     ConsentRequestStatus,
+    ConsentReviewDecision,
     ConsentSignature,
     ConsentSubmission,
     ConsentTemplate,
     ConsentTemplateVersion,
+    EligibilityResult,
 )
 from medical_api.modules.consents.repository import ConsentRepository, ConsentTemplateRepository
 from medical_api.modules.consents.schemas import (
@@ -32,6 +34,7 @@ from medical_api.modules.consents.schemas import (
     ConsentRequestDetail,
     ConsentSubmissionCreate,
     ConsentSubmissionRead,
+    ConsentSubmissionReviewCreate,
     ConsentTemplateCreate,
     ConsentTemplateRead,
     DocumentVerifyResult,
@@ -369,11 +372,21 @@ class ConsentService:
             answers = await self.repository.list_answers(submission.id)
             signature = await self.repository.get_signature(submission.id)
             documents = await self.repository.list_documents_for_submission(submission.id)
+            reviewed_by_name = (
+                await self.repository.get_user_full_name(submission.reviewed_by_user_id)
+                if submission.reviewed_by_user_id is not None
+                else None
+            )
             submission_read = ConsentSubmissionRead(
                 id=submission.id,
                 submitted_at=submission.submitted_at,
                 timezone=submission.timezone,
                 eligibility_result=submission.eligibility_result,
+                review_decision=submission.review_decision,
+                review_rationale=submission.review_rationale,
+                reviewed_by_user_id=submission.reviewed_by_user_id,
+                reviewed_by_name=reviewed_by_name,
+                reviewed_at=submission.reviewed_at,
                 has_signature=signature is not None,
                 answers=[
                     ConsentAnswerRead(
@@ -394,6 +407,30 @@ class ConsentService:
             created_at=request.created_at,
             submission=submission_read,
         )
+
+    async def review_submission(
+        self,
+        organization_id: uuid.UUID,
+        submission_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+        data: ConsentSubmissionReviewCreate,
+    ) -> ConsentSubmission:
+        submission = await self.repository.get_submission_with_org_check(
+            organization_id, submission_id, for_update=True
+        )
+        if submission is None:
+            raise NotFoundError("ConsentSubmission", submission_id)
+        if submission.eligibility_result != EligibilityResult.REQUIRES_MANUAL_REVIEW:
+            raise ConflictError("Only submissions requiring manual review can be reviewed")
+        if submission.review_decision is not None:
+            raise ConflictError(f"Consent submission {submission_id} has already been reviewed")
+
+        submission.review_decision = ConsentReviewDecision(data.decision)
+        submission.review_rationale = data.rationale
+        submission.reviewed_by_user_id = actor_user_id
+        submission.reviewed_at = datetime.now(UTC)
+        await self.session.flush()
+        return submission
 
 
 class DocumentService:

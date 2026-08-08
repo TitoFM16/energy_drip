@@ -16,6 +16,8 @@ from medical_api.modules.consents.schemas import (
     ConsentRequestRead,
     ConsentSubmissionCreate,
     ConsentSubmissionResult,
+    ConsentSubmissionReviewCreate,
+    ConsentSubmissionReviewRead,
     ConsentTemplateCreate,
     ConsentTemplateRead,
     ConsentTemplateVersionDetail,
@@ -46,6 +48,7 @@ documents_router = APIRouter()
 # tighter set of roles than metadata/download/verify.
 _DOCUMENT_READ_ROLES = ("organization_admin", "medical_director", "practitioner")
 _DOCUMENT_ADMIN_ROLES = ("organization_admin", "medical_director")
+_SUBMISSION_REVIEW_ROLES = ("organization_admin", "medical_director", "practitioner")
 
 
 @router.post(
@@ -198,6 +201,44 @@ async def get_consent_request(
 ) -> ConsentRequestDetail:
     service = ConsentService(ConsentRepository(session), session)
     return await service.get_request_detail(user.organization_id, request_id)
+
+
+@router.post(
+    "/submissions/{submission_id}/review",
+    response_model=ConsentSubmissionReviewRead,
+    dependencies=[Depends(require_roles(*_SUBMISSION_REVIEW_ROLES))],
+)
+async def review_consent_submission(
+    submission_id: uuid.UUID,
+    payload: ConsentSubmissionReviewCreate,
+    user: AuthenticatedUser,
+    session: DbSession,
+) -> ConsentSubmissionReviewRead:
+    repository = ConsentRepository(session)
+    service = ConsentService(repository, session)
+    submission = await service.review_submission(
+        user.organization_id,
+        submission_id,
+        user.user_id,
+        payload,
+    )
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="consent_submission.reviewed",
+        resource_type="consent_submission",
+        resource_id=str(submission.id),
+        metadata={"decision": payload.decision, "rationale": payload.rationale},
+    )
+    reviewed_by_name = await repository.get_user_full_name(user.user_id)
+    await session.commit()
+    return ConsentSubmissionReviewRead(
+        decision=submission.review_decision,
+        rationale=submission.review_rationale,
+        reviewed_by_user_id=submission.reviewed_by_user_id,
+        reviewed_by_name=reviewed_by_name or "Usuario",
+        reviewed_at=submission.reviewed_at,
+    )
 
 
 @router.post(
