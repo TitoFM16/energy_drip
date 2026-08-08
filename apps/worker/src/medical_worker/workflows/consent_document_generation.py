@@ -10,3 +10,14 @@ logger = structlog.get_logger(__name__)
 @dramatiq.actor(max_retries=5, min_backoff=5_000, max_backoff=300_000)
 def handle_consent_submitted(payload: dict) -> None:
     generate_consent_pdf.send(payload["consent_request_id"], payload["submission_id"])
+
+
+@dramatiq.actor(max_retries=5, min_backoff=5_000, max_backoff=300_000)
+def handle_document_regenerate_requested(payload: dict) -> None:
+    generate_consent_pdf.send(
+        payload["consent_request_id"],
+        payload["submission_id"],
+        force_new_version=True,
+        reason=payload.get("reason"),
+        requested_by_user_id=payload.get("requested_by_user_id"),
+    )

@@ -122,6 +122,20 @@ class ConsentAnswerRead(BaseModel):
     value: Any
 
 
+class DocumentRead(BaseModel):
+    id: uuid.UUID
+    submission_id: uuid.UUID
+    sha256_hash: str
+    document_version: int
+    is_current: bool
+    regenerated_reason: str | None
+    invalidated_at: datetime | None
+    invalidated_reason: str | None
+    generated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class ConsentSubmissionRead(BaseModel):
     id: uuid.UUID
     submitted_at: datetime
@@ -129,7 +143,31 @@ class ConsentSubmissionRead(BaseModel):
     eligibility_result: EligibilityResult
     has_signature: bool
     answers: list[ConsentAnswerRead]
+    # Empty until the worker finishes generating the PDF (async, off the
+    # consent.submitted event) — the review workspace polls/refetches
+    # rather than the API making the client wait on it synchronously.
+    documents: list[DocumentRead] = []
 
 
 class ConsentRequestDetail(ConsentRequestRead):
     submission: ConsentSubmissionRead | None = None
+
+
+class DocumentDownloadRead(BaseModel):
+    url: str
+    expires_in: int
+
+
+class DocumentVerifyResult(BaseModel):
+    sha256_hash: str
+    recomputed_hash: str
+    matches: bool
+    verified_at: datetime
+
+
+class DocumentInvalidate(BaseModel):
+    reason: str
+
+
+class DocumentRegenerate(BaseModel):
+    reason: str

@@ -5,10 +5,15 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from medical_api.core.exceptions import ConflictError, NotFoundError
-from medical_api.integrations.object_storage.client import upload_bytes
+from medical_api.integrations.object_storage.client import (
+    download_bytes,
+    generate_presigned_download_url,
+    upload_bytes,
+)
 from medical_api.modules.audit.service import AuditService
 from medical_api.modules.consents.models import (
     ConsentAnswer,
+    ConsentDocument,
     ConsentEvent,
     ConsentQuestion,
     ConsentQuestionOption,
@@ -29,10 +34,14 @@ from medical_api.modules.consents.schemas import (
     ConsentSubmissionRead,
     ConsentTemplateCreate,
     ConsentTemplateRead,
+    DocumentVerifyResult,
 )
 from medical_api.modules.notifications.service import enqueue_event
 from medical_api.shared.domain.eligibility import evaluate_rules
+from medical_api.shared.utilities.hashing import sha256_hash
 from medical_api.shared.utilities.tokens import generate_opaque_token, hash_token
+
+DOCUMENT_DOWNLOAD_URL_TTL_SECONDS = 300
 
 CONSENT_LINK_TTL = timedelta(hours=48)
 
@@ -325,6 +334,7 @@ class ConsentService:
         if submission is not None:
             answers = await self.repository.list_answers(submission.id)
             signature = await self.repository.get_signature(submission.id)
+            documents = await self.repository.list_documents_for_submission(submission.id)
             submission_read = ConsentSubmissionRead(
                 id=submission.id,
                 submitted_at=submission.submitted_at,
@@ -337,6 +347,7 @@ class ConsentService:
                     )
                     for a in answers
                 ],
+                documents=documents,
             )
 
         return ConsentRequestDetail(
@@ -348,4 +359,89 @@ class ConsentService:
             expires_at=request.expires_at,
             created_at=request.created_at,
             submission=submission_read,
+        )
+
+
+class DocumentService:
+    def __init__(self, repository: ConsentRepository, session: AsyncSession):
+        self.repository = repository
+        self.session = session
+
+    async def _get_owned_document(
+        self, organization_id: uuid.UUID, document_id: uuid.UUID
+    ) -> ConsentDocument:
+        document = await self.repository.get_document_with_org_check(organization_id, document_id)
+        if document is None:
+            raise NotFoundError("ConsentDocument", document_id)
+        return document
+
+    async def get_metadata(
+        self, organization_id: uuid.UUID, document_id: uuid.UUID
+    ) -> ConsentDocument:
+        return await self._get_owned_document(organization_id, document_id)
+
+    async def get_download_url(
+        self, organization_id: uuid.UUID, document_id: uuid.UUID
+    ) -> tuple[str, int]:
+        document = await self._get_owned_document(organization_id, document_id)
+        url = generate_presigned_download_url(
+            document.storage_key, DOCUMENT_DOWNLOAD_URL_TTL_SECONDS
+        )
+        return url, DOCUMENT_DOWNLOAD_URL_TTL_SECONDS
+
+    async def verify(
+        self, organization_id: uuid.UUID, document_id: uuid.UUID
+    ) -> DocumentVerifyResult:
+        document = await self._get_owned_document(organization_id, document_id)
+        data = download_bytes(document.storage_key)
+        recomputed = sha256_hash(data)
+        return DocumentVerifyResult(
+            sha256_hash=document.sha256_hash,
+            recomputed_hash=recomputed,
+            matches=recomputed == document.sha256_hash,
+            verified_at=datetime.now(UTC),
+        )
+
+    async def invalidate(
+        self,
+        organization_id: uuid.UUID,
+        document_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+        reason: str,
+    ) -> ConsentDocument:
+        document = await self._get_owned_document(organization_id, document_id)
+        if document.invalidated_at is not None:
+            raise ConflictError(f"Document {document_id} is already invalidated")
+        document.invalidated_at = datetime.now(UTC)
+        document.invalidated_reason = reason
+        document.invalidated_by_user_id = actor_user_id
+        return document
+
+    async def request_regeneration(
+        self,
+        organization_id: uuid.UUID,
+        document_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+        reason: str,
+    ) -> None:
+        # The actual PDF regeneration happens asynchronously in the worker
+        # (see apps/worker/.../activities/generate_pdf.py) — this just
+        # authorizes the request, resolves it down to the submission the
+        # worker needs, and hands off via the outbox, same
+        # write-then-async-consume split every other workflow in this
+        # codebase uses (see consent.submitted).
+        document = await self._get_owned_document(organization_id, document_id)
+        submission = await self.repository.get_submission(document.submission_id)
+        if submission is None:
+            raise NotFoundError("ConsentSubmission", document.submission_id)
+        await enqueue_event(
+            self.session,
+            organization_id=organization_id,
+            event_type="consent.document.regenerate_requested",
+            payload={
+                "consent_request_id": str(submission.consent_request_id),
+                "submission_id": str(document.submission_id),
+                "reason": reason,
+                "requested_by_user_id": str(actor_user_id),
+            },
         )

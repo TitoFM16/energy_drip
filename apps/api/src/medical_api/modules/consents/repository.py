@@ -165,3 +165,40 @@ class ConsentRepository:
         self.session.add(document)
         await self.session.flush()
         return document
+
+    async def get_document_with_org_check(
+        self, organization_id: uuid.UUID, document_id: uuid.UUID
+    ) -> ConsentDocument | None:
+        # ConsentDocument has no organization_id of its own — same
+        # join-through-parent pattern as ClinicalNote/PatientMedicalHistory
+        # (see "Complete server-side authorization review" in
+        # missing_features.md), joined two levels up through Submission ->
+        # Request since that's where organization_id actually lives.
+        stmt = (
+            select(ConsentDocument)
+            .join(ConsentSubmission, ConsentSubmission.id == ConsentDocument.submission_id)
+            .join(ConsentRequest, ConsentRequest.id == ConsentSubmission.consent_request_id)
+            .where(
+                ConsentDocument.id == document_id,
+                ConsentRequest.organization_id == organization_id,
+            )
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def get_current_document_for_submission(
+        self, submission_id: uuid.UUID
+    ) -> ConsentDocument | None:
+        stmt = select(ConsentDocument).where(
+            ConsentDocument.submission_id == submission_id, ConsentDocument.is_current.is_(True)
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def list_documents_for_submission(
+        self, submission_id: uuid.UUID
+    ) -> list[ConsentDocument]:
+        stmt = (
+            select(ConsentDocument)
+            .where(ConsentDocument.submission_id == submission_id)
+            .order_by(ConsentDocument.document_version)
+        )
+        return list((await self.session.execute(stmt)).scalars().all())

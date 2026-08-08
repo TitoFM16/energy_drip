@@ -20,13 +20,32 @@ from medical_api.modules.consents.schemas import (
     ConsentTemplateRead,
     ConsentTemplateVersionDetail,
     ConsentTemplateVersionRead,
+    DocumentDownloadRead,
+    DocumentInvalidate,
+    DocumentRead,
+    DocumentRegenerate,
+    DocumentVerifyResult,
 )
-from medical_api.modules.consents.service import ConsentService, ConsentTemplateService
+from medical_api.modules.consents.service import (
+    ConsentService,
+    ConsentTemplateService,
+    DocumentService,
+)
 
-# Mounted under /api/v1/consents (staff, authenticated) and
-# /api/v1/public/consents (patient, token-based).
+# Mounted under /api/v1/consents (staff, authenticated),
+# /api/v1/public/consents (patient, token-based), and
+# /api/v1/documents (staff, authenticated).
 router = APIRouter()
 public_router = APIRouter()
+documents_router = APIRouter()
+
+# Signed consent PDFs are restricted clinical/legal content — same
+# reasoning as clinical notes (reception/assistant can schedule around
+# them but shouldn't read them). Invalidating one is a bigger, more
+# deliberate action than reading or downloading it, so it's held to a
+# tighter set of roles than metadata/download/verify.
+_DOCUMENT_READ_ROLES = ("organization_admin", "medical_director", "practitioner")
+_DOCUMENT_ADMIN_ROLES = ("organization_admin", "medical_director")
 
 
 @router.post(
@@ -258,3 +277,121 @@ async def submit_consent_form(
     return ConsentSubmissionResult(
         submission_id=submission.id, eligibility_result=submission.eligibility_result
     )
+
+
+@documents_router.get(
+    "/{document_id}",
+    response_model=DocumentRead,
+    dependencies=[Depends(require_roles(*_DOCUMENT_READ_ROLES))],
+)
+async def get_document(
+    document_id: uuid.UUID, user: AuthenticatedUser, session: DbSession
+) -> DocumentRead:
+    service = DocumentService(ConsentRepository(session), session)
+    document = await service.get_metadata(user.organization_id, document_id)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="document.accessed",
+        resource_type="consent_document",
+        resource_id=str(document.id),
+    )
+    await session.commit()
+    return document
+
+
+@documents_router.get(
+    "/{document_id}/download",
+    response_model=DocumentDownloadRead,
+    dependencies=[Depends(require_roles(*_DOCUMENT_READ_ROLES))],
+)
+async def download_document(
+    document_id: uuid.UUID, user: AuthenticatedUser, session: DbSession
+) -> DocumentDownloadRead:
+    service = DocumentService(ConsentRepository(session), session)
+    url, expires_in = await service.get_download_url(user.organization_id, document_id)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="document.downloaded",
+        resource_type="consent_document",
+        resource_id=str(document_id),
+    )
+    await session.commit()
+    return DocumentDownloadRead(url=url, expires_in=expires_in)
+
+
+@documents_router.post(
+    "/{document_id}/verify",
+    response_model=DocumentVerifyResult,
+    dependencies=[Depends(require_roles(*_DOCUMENT_READ_ROLES))],
+)
+async def verify_document(
+    document_id: uuid.UUID, user: AuthenticatedUser, session: DbSession
+) -> DocumentVerifyResult:
+    service = DocumentService(ConsentRepository(session), session)
+    result = await service.verify(user.organization_id, document_id)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="document.verified",
+        resource_type="consent_document",
+        resource_id=str(document_id),
+        metadata={"matches": result.matches},
+    )
+    await session.commit()
+    return result
+
+
+@documents_router.post(
+    "/{document_id}/invalidate",
+    response_model=DocumentRead,
+    dependencies=[Depends(require_roles(*_DOCUMENT_ADMIN_ROLES))],
+)
+async def invalidate_document(
+    document_id: uuid.UUID,
+    payload: DocumentInvalidate,
+    user: AuthenticatedUser,
+    session: DbSession,
+) -> DocumentRead:
+    service = DocumentService(ConsentRepository(session), session)
+    document = await service.invalidate(
+        user.organization_id, document_id, user.user_id, payload.reason
+    )
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="document.invalidated",
+        resource_type="consent_document",
+        resource_id=str(document.id),
+        metadata={"reason": payload.reason},
+    )
+    await session.commit()
+    return document
+
+
+@documents_router.post(
+    "/{document_id}/regenerate",
+    status_code=202,
+    dependencies=[Depends(require_roles(*_DOCUMENT_ADMIN_ROLES))],
+)
+async def regenerate_document(
+    document_id: uuid.UUID,
+    payload: DocumentRegenerate,
+    user: AuthenticatedUser,
+    session: DbSession,
+) -> dict[str, str]:
+    service = DocumentService(ConsentRepository(session), session)
+    await service.request_regeneration(
+        user.organization_id, document_id, user.user_id, payload.reason
+    )
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="document.regeneration_requested",
+        resource_type="consent_document",
+        resource_id=str(document_id),
+        metadata={"reason": payload.reason},
+    )
+    await session.commit()
+    return {"status": "regeneration_requested"}

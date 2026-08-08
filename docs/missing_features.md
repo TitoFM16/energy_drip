@@ -232,18 +232,19 @@ therefore no longer tracked as wholly missing:
   design-tokens CSS files remain unused since neither app reads CSS custom
   properties).
 - Added `apps/e2e`: Playwright end-to-end tests against the real
-  `docker compose up` stack, wired into CI as a third job. 8 flows covered
+  `docker compose up` stack, wired into CI as a third job. 9 flows covered
   (staff login → appointment booking, the full cross-app patient consent
   flow, the public booking form, patient creation as its own
   assertion-bearing test, treatment-plan creation + session recording
   under the `practitioner` role, the medical-record flows, Settings
-  availability-rules management, and consent-request revoke/resend) —
-  verified these actually catch regressions, not just that they pass, by
-  deliberately breaking a button and watching the suite fail before
-  reverting, for the appointment-booking, treatment-plan/session,
-  medical-record, availability-rules, and consent-lifecycle tests. See
-  "End-to-end tests" above for the full list of what's covered vs. still
-  open, and two real environment gotchas (slot-grid alignment near
+  availability-rules management, consent-request revoke/resend, and
+  document download/verify/regenerate/invalidate) — verified these
+  actually catch regressions, not just that they pass, by deliberately
+  breaking a button and watching the suite fail before reverting, for the
+  appointment-booking, treatment-plan/session, medical-record,
+  availability-rules, consent-lifecycle, and document-verification tests.
+  See "End-to-end tests" above for the full list of what's covered vs.
+  still open, and two real environment gotchas (slot-grid alignment near
   day-end, the booking rate-limiter applying to repeated local test runs)
   worth knowing about before extending this suite.
 - Closed most of "Settings administration"'s availability-rules gap:
@@ -262,6 +263,16 @@ therefore no longer tracked as wholly missing:
   toggle), plus a `MedicalRecordSection` on the patient detail page in
   staff-web and an E2E test. See "Complete medical-record API" below for
   the full writeup.
+- Closed "Document access, verification, and invalidation" and "Document
+  version history and regeneration": staff can now download (short-lived
+  signed URL), verify (real hash recomputation), regenerate (new
+  version, old one preserved), and invalidate a signed consent PDF, all
+  audited. Found and fixed two real bugs along the way — presigned
+  download URLs were unreachable from outside the Docker network
+  (nothing had ever exposed them to a browser before), and the PDF
+  worker had no idempotency guard against its own dramatiq retries. See
+  "Document access, verification, and invalidation" below for the full
+  writeup.
 
 ## Priority levels
 
@@ -749,31 +760,93 @@ required `reason`) and `POST /api/v1/consents/requests/{id}/resend`
   by disabling the "Reenviar" button and watching it fail before
   reverting.
 
-### P1: Document access, verification, and invalidation
+### P1: Document access, verification, and invalidation — done
 
-PDF generation exists, but staff-facing document operations are incomplete.
+New `/api/v1/documents` router
+(`apps/api/src/medical_api/modules/consents/{router,service,repository}.py`
+— `ConsentDocument` rows live in the consents module per its own
+docstring, so the new `DocumentService`/endpoints were added there rather
+than standing up a separate empty `documents` module):
 
-Acceptance criteria:
+- `GET /{id}` (metadata), `GET /{id}/download` (short-lived presigned
+  URL, 5 min TTL), `POST /{id}/verify` (downloads the real object and
+  recomputes its SHA-256, comparing against the stored hash — doesn't
+  just echo it back), role-gated to
+  `organization_admin`/`medical_director`/`practitioner` (same
+  restricted-clinical-content roles as clinical notes).
+- `POST /{id}/invalidate` (requires a reason; 409 if already
+  invalidated) restricted to `organization_admin`/`medical_director`
+  only — invalidating a signed legal document is a more deliberate
+  action than reading one.
+- Every operation — metadata access, download, verify, invalidate, and
+  (see below) creation/regeneration — calls `AuditService.record(...)`.
+  `ConsentDocument` has no `organization_id` of its own, so authorization
+  joins through `Submission -> Request` (same pattern as
+  `ClinicalNote`/`PatientMedicalHistory`).
+- Found and fixed a real bug while wiring up downloads: presigned URLs
+  were generated against `S3_ENDPOINT_URL`, which in `docker-compose.yml`
+  is the internal `http://minio:9000` Docker-network hostname — a
+  browser outside that network can't resolve it, so every presigned URL
+  would have been dead on arrival the moment this became the first
+  client-facing use of `generate_presigned_download_url` (previously
+  unused anywhere in the codebase). Added `S3_PUBLIC_ENDPOINT_URL`
+  (`http://localhost:9000` in docker-compose.yml, falls back to
+  `S3_ENDPOINT_URL` when unset) and a separate presigning-only S3 client
+  in `object_storage/client.py` — SigV4 signs the `Host` header, so the
+  presigning client has to be built against the same host the browser
+  will actually request, not just string-replaced after the fact.
+  Verified live: downloaded a real generated PDF through the browser
+  after the fix; confirmed it 000'd (unreachable) before it.
 
-- Authorize document metadata and download requests.
-- Return short-lived signed download URLs.
-- Recalculate or verify the stored SHA-256 hash when required.
-- Provide a document verification view.
-- Allow only designated roles to invalidate a document.
-- Never delete or overwrite an invalidated historical document.
-- Record document creation, access, download, verification, regeneration, and
-  invalidation in the audit trail.
+### P1: Document version history and regeneration — done
 
-### P1: Document version history and regeneration
+`ConsentDocument` gained `is_current`, `invalidated_at`,
+`invalidated_reason`, `invalidated_by_user_id`, and `regenerated_reason`
+(migration `b19f9d8c36b4`):
 
-Acceptance criteria:
-
-- Treat every generated PDF as a distinct document version.
-- Never replace an existing object-storage key.
-- Record which document version is current and why a later version was created.
-- Preserve the original submission and every generated version.
-- Make retries idempotent so a worker retry does not create unintended duplicate
-  versions.
+- **Regeneration**: `POST /api/v1/documents/{id}/regenerate` (same
+  restricted roles as invalidate, requires a reason) enqueues a
+  `consent.document.regenerate_requested` outbox event rather than
+  regenerating synchronously — same write-then-async-consume split every
+  other workflow in this codebase uses. The worker
+  (`apps/worker/.../activities/generate_pdf.py`) marks the previous
+  current version `is_current=False` and creates a new row with the
+  reason recorded and `document_version` incremented — the old object
+  and row are never touched or deleted, only superseded.
+- **Idempotency bug found and fixed**: the original `_generate` had no
+  guard at all — dramatiq retries this actor up to 5 times on any
+  transient failure, and every retry would have minted a brand new
+  storage key and `ConsentDocument` row for the exact same submission.
+  Now checks for an existing current document for the submission first
+  and no-ops if one's already there (logged, not silently swallowed) —
+  verified live by submitting a fresh consent and confirming exactly one
+  document row exists afterward.
+- `ConsentRequestDetail.submission.documents` now returns every version
+  for a submission (previously there was no way for staff-web to even
+  discover a document's ID at all — nothing referenced `ConsentDocument`
+  outside the worker that created it).
+- Verified the full lifecycle live against the real docker compose stack
+  with the worker actually running: submit → PDF generated (version 1,
+  current) → regenerate with a reason → version 2 created and current,
+  version 1 marked replaced → invalidate version 2 → both versions still
+  present and downloadable, audit trail shows
+  `document.created`/`document.regeneration_requested`/
+  `document.regenerated`/`document.downloaded`/`document.verified`/
+  `document.invalidated` each with the correct actor (`None` for the
+  system-generated original, the requesting staff user for everything
+  else).
+- staff-web: `apps/staff-web/src/routes/consents/review-section.tsx`
+  gained a "Documento firmado" list per submission showing every
+  version's state (Vigente/Reemplazado/Invalidado) with
+  Descargar/Verificar actions on every version and
+  Invalidar/Regenerar on the current one. `apps/api/tests/test_documents.py`
+  (6 tests, real Postgres + real MinIO — download/verify hit the actual
+  object store, not a mock) covers org-scoping, role-gating, tampered-hash
+  detection, the invalidate one-way guard, and audit coverage; an E2E
+  test exercises the full download/verify/regenerate/invalidate flow
+  through the real UI with the worker running — verified it actually
+  catches regressions by disabling the "Verificar" button and watching
+  it fail before reverting.
 
 ### P1: Durable object-storage configuration
 
@@ -1637,9 +1710,11 @@ shapes — no dependency on `make seed` or any other test's data, avoiding
 the same shared-dev-database pollution problem `test_auth_flows.py` hit
 earlier (see "Backend integration tests").
 
-Covers 8 flows so far (the 7th and 8th, Settings administration and the
+Covers 9 flows so far (the 7th and 8th, Settings administration and the
 consent-lifecycle actions, are coverage beyond the acceptance-criteria
-list below — neither maps onto any of the still-open items there):
+list below and don't map onto any of the still-open items there; the 9th,
+document verification, closes the "signed-document retrieval" half of
+the "Staff medical review and signed-document retrieval" item below):
 
 - Staff logs in **through the real login form** (not a token injected into
   storage), books an available slot for a patient, confirms it lands on
@@ -1671,6 +1746,11 @@ list below — neither maps onto any of the still-open items there):
   a new rule through the real form, confirms it's visible sorted
   alongside the rules `bootstrapClinic()` seeds as fixture data, then
   deletes it.
+- Staff downloads, verifies (integrity check against the real object),
+  regenerates (with a reason), and invalidates (with a reason) a signed
+  consent PDF — waiting on the worker's real asynchronous PDF generation
+  rather than a mock, and confirming a regenerated version supersedes the
+  original without deleting it.
 - Staff revokes a pending consent request with a reason, confirms it and
   a resent replacement both end up in the right lifecycle state, and
   confirms patient-web shows a distinct "no longer available" message on
@@ -1689,9 +1769,15 @@ watched it fail with a precise error (button not enabled, 30s timeout),
 reverted, watched it pass again — repeated the same drill for the
 treatment-plan/session test against the "Registrar sesión" button, for
 the medical-record test against the "Finalizar" button, for the Settings
-availability-rules test against the "Agregar horario" button, and for the
-consent-lifecycle test against the "Reenviar" button. Also hit two real
-environment issues
+availability-rules test against the "Agregar horario" button, for the
+consent-lifecycle test against the "Reenviar" button, and for the
+document-verification test against the "Verificar" button (this one
+initially had a real locator bug of its own — an unscoped `li` +
+`hasText: 'Versión 1'` selector matched the published-template list's
+"Versión 1" text above it as well as the intended document row, making
+the test flaky independent of the deliberate break; fixed by scoping to
+the document list specifically before doing the break/revert drill).
+Also hit two real environment issues
 while building this that are worth knowing about if these start flaking:
 availability-rule time windows are interpreted as UTC and slots are
 generated on a grid aligned to the rule's `start_time` — a narrow window
@@ -1718,9 +1804,10 @@ Acceptance criteria:
   the WhatsApp delivery step itself (nothing to assert against without
   real Meta credentials — see `docs/whatsapp-setup.md`).
 - ~~Mobile questionnaire, signature, and submission.~~ Done.
-- Staff medical review and signed-document retrieval. The eligibility
-  review is covered; signed-PDF retrieval isn't (depends on the worker's
-  PDF-generation step, which the current test doesn't wait on).
+- ~~Staff medical review and signed-document retrieval.~~ Done —
+  `document-verification.spec.ts` waits on the worker's async PDF
+  generation (retrying/reloading rather than racing a fixed sleep) and
+  downloads the real generated document through the UI.
 - Reminder cancellation after appointment cancellation or patient opt-out.
   Not covered — opt-out handling doesn't exist yet as a feature (see
   "Patient communication preferences and opt-out").

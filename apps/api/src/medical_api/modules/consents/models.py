@@ -154,18 +154,28 @@ class ConsentSignature(Base, UUIDPrimaryKeyMixin):
 
 class ConsentDocument(Base, UUIDPrimaryKeyMixin):
     """Points at an immutable, versioned object in storage. Regeneration
-    creates a new row/version rather than overwriting the storage object.
+    creates a new row/version rather than overwriting the storage object —
+    a document row is never deleted or updated in place except to flip
+    is_current (when a later version supersedes it) or to invalidate it.
     """
 
     __tablename__ = "consent_documents"
 
     submission_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("consent_submissions.id", ondelete="CASCADE")
+        ForeignKey("consent_submissions.id", ondelete="CASCADE"), index=True
     )
     storage_key: Mapped[str]
     storage_version_id: Mapped[str | None]
     sha256_hash: Mapped[str] = mapped_column(String(64))
     document_version: Mapped[int] = mapped_column(default=1)
+    is_current: Mapped[bool] = mapped_column(default=True)
+    # Why this version exists — None for the original, automatic
+    # generation; set to the staff-supplied reason for any later version
+    # created via regeneration.
+    regenerated_reason: Mapped[str | None]
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    invalidated_reason: Mapped[str | None]
+    invalidated_by_user_id: Mapped[uuid.UUID | None]
     generated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

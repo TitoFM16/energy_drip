@@ -14,7 +14,10 @@ from medical_api.core.database import async_session_factory
 from medical_api.modules.notifications.models import OutboxEvent
 from medical_worker.activities.update_delivery_status import update_delivery_status
 from medical_worker.workflows.appointment_confirmation import handle_appointment_scheduled
-from medical_worker.workflows.consent_document_generation import handle_consent_submitted
+from medical_worker.workflows.consent_document_generation import (
+    handle_consent_submitted,
+    handle_document_regenerate_requested,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -31,6 +34,7 @@ HEARTBEAT_EVERY_N_POLLS = 150
 _EVENT_HANDLERS = {
     "appointment.scheduled": handle_appointment_scheduled,
     "consent.submitted": handle_consent_submitted,
+    "consent.document.regenerate_requested": handle_document_regenerate_requested,
     "whatsapp.delivery_status": update_delivery_status,
 }
 

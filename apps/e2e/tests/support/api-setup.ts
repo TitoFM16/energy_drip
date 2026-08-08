@@ -205,3 +205,21 @@ export async function createConsentRequest(
     token: adminToken,
   });
 }
+
+// Drives the same public, token-based endpoints patient-web's real
+// questionnaire/signature UI calls (see consent-flow.spec.ts for the full
+// UI-driven version) — used when a test only cares about what happens
+// *after* a real submission exists (e.g. the staff-side document
+// actions), so it doesn't need to re-walk the patient UI just for setup.
+export async function submitConsentForm(token: string): Promise<{ submission_id: string }> {
+  const form = await api<Schemas['ConsentFormRead']>(`/api/v1/public/consents/${token}`);
+  const answers = form.questions.map((question) => ({
+    question_id: question.id,
+    field_key: question.field_key,
+    value: false,
+  }));
+  return api(`/api/v1/public/consents/${token}/submit`, {
+    method: 'POST',
+    body: JSON.stringify({ answers, signature_svg: '<svg></svg>', timezone: 'America/Bogota' }),
+  });
+}

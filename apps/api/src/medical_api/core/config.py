@@ -14,6 +14,16 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     s3_endpoint_url: str = "http://localhost:9000"
+    # Used only for signing presigned download URLs handed to a browser —
+    # server-to-server calls (upload_bytes/download_bytes) always use
+    # s3_endpoint_url. In docker-compose, s3_endpoint_url is the internal
+    # Docker-network hostname (http://minio:9000), which a browser outside
+    # the network can't resolve; s3_public_endpoint_url is the
+    # host-reachable address (http://localhost:9000) a browser can
+    # actually use. Falls back to s3_endpoint_url when unset, which is
+    # correct for non-Docker setups (both point at the same reachable
+    # host, e.g. `make dev`'s .env.example).
+    s3_public_endpoint_url: str | None = None
     s3_access_key: str = "medical"
     s3_secret_key: str = "medical123"
     s3_bucket: str = "medical-platform"

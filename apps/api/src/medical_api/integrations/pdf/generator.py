@@ -5,11 +5,14 @@ outbox event (see docs/architecture). Requires the `medical-api[pdf]` extra
 (WeasyPrint) which only `apps/worker` installs.
 """
 
-import hashlib
 from datetime import datetime
 from typing import Any
 
 from weasyprint import HTML
+
+from medical_api.shared.utilities.hashing import sha256_hash
+
+__all__ = ["render_consent_pdf", "sha256_hash"]
 
 
 def render_consent_pdf(
@@ -35,7 +38,3 @@ def render_consent_pdf(
     </body></html>
     """
     return HTML(string=html).write_pdf()
-
-
-def sha256_hash(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()

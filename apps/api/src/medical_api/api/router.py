@@ -23,6 +23,7 @@ api_router.include_router(appointments.router, prefix="/appointments", tags=["ap
 api_router.include_router(practitioners.router, prefix="/practitioners", tags=["practitioners"])
 api_router.include_router(treatments.router, prefix="/treatments", tags=["treatments"])
 api_router.include_router(consents.router, prefix="/consents", tags=["consents"])
+api_router.include_router(consents.documents_router, prefix="/documents", tags=["documents"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(booking.router, prefix="/booking-requests", tags=["booking-requests"])
 api_router.include_router(audit_router, prefix="/audit", tags=["audit"])

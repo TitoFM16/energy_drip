@@ -12,6 +12,9 @@ export type ConsentRequest = Schemas['ConsentRequestRead'];
 export type ConsentAnswer = Schemas['ConsentAnswerRead'];
 export type ConsentSubmission = Schemas['ConsentSubmissionRead'];
 export type ConsentRequestDetail = Schemas['ConsentRequestDetail'];
+export type Document = Schemas['DocumentRead'];
+export type DocumentDownload = Schemas['DocumentDownloadRead'];
+export type DocumentVerifyResult = Schemas['DocumentVerifyResult'];
 
 // Not generated from Schemas: the backend's ConsentQuestionPublic response
 // model types `options` as a loose `dict[str, str]` rather than a
