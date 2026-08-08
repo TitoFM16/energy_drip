@@ -151,14 +151,23 @@ class ConsentService:
         )
 
     async def _resolve_active_request(self, raw_token: str) -> ConsentRequest:
+        # detail is a small {"reason": ...} dict rather than a free-text
+        # string so patient-web can render a distinct message per state
+        # ("expired" vs "invalidated" vs "completed") instead of one generic
+        # "invalid or expired" message for every failure mode.
         request = await self.repository.get_request_by_token_hash(hash_token(raw_token))
         if request is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Consent link not found")
-        if request.status != ConsentRequestStatus.PENDING:
-            raise HTTPException(status.HTTP_410_GONE, "Consent link already used or invalidated")
-        if request.expires_at < datetime.now(UTC):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"reason": "not_found"})
+        if request.status == ConsentRequestStatus.PENDING and request.expires_at < datetime.now(
+            UTC
+        ):
             request.status = ConsentRequestStatus.EXPIRED
-            raise HTTPException(status.HTTP_410_GONE, "Consent link has expired")
+        if request.status == ConsentRequestStatus.COMPLETED:
+            raise HTTPException(status.HTTP_410_GONE, detail={"reason": "completed"})
+        if request.status == ConsentRequestStatus.INVALIDATED:
+            raise HTTPException(status.HTTP_410_GONE, detail={"reason": "invalidated"})
+        if request.status == ConsentRequestStatus.EXPIRED:
+            raise HTTPException(status.HTTP_410_GONE, detail={"reason": "expired"})
         return request
 
     async def submit(
@@ -233,6 +242,64 @@ class ConsentService:
         )
         return submission
 
+    async def _get_owned_request(
+        self, organization_id: uuid.UUID, request_id: uuid.UUID
+    ) -> ConsentRequest:
+        request = await self.repository.get_request(request_id)
+        if request is None or request.organization_id != organization_id:
+            raise NotFoundError("ConsentRequest", request_id)
+        return request
+
+    async def invalidate_request(
+        self, organization_id: uuid.UUID, request_id: uuid.UUID, reason: str
+    ) -> ConsentRequest:
+        request = await self._get_owned_request(organization_id, request_id)
+        if request.status != ConsentRequestStatus.PENDING:
+            raise ConflictError(
+                f"Only a pending consent request can be invalidated (current status: "
+                f"{request.status})"
+            )
+        request.status = ConsentRequestStatus.INVALIDATED
+        self.session.add(
+            ConsentEvent(
+                consent_request_id=request.id,
+                event_type="consent.invalidated",
+                event_metadata={"reason": reason},
+            )
+        )
+        return request
+
+    async def resend_request(
+        self, organization_id: uuid.UUID, request_id: uuid.UUID
+    ) -> tuple[ConsentRequest, str]:
+        original = await self._get_owned_request(organization_id, request_id)
+        if original.status not in (ConsentRequestStatus.PENDING, ConsentRequestStatus.EXPIRED):
+            raise ConflictError(
+                f"Only a pending or expired consent request can be resent (current status: "
+                f"{original.status})"
+            )
+
+        new_request, raw_token = await self.create_request(
+            organization_id,
+            original.patient_id,
+            original.appointment_id,
+            original.template_version_id,
+        )
+
+        # A still-pending original is superseded so only one link stays
+        # live for the same purpose; an already-expired original is left
+        # as EXPIRED (it's already a dead link, not "invalidated").
+        if original.status == ConsentRequestStatus.PENDING:
+            original.status = ConsentRequestStatus.INVALIDATED
+        self.session.add(
+            ConsentEvent(
+                consent_request_id=original.id,
+                event_type="consent.resent",
+                event_metadata={"new_request_id": str(new_request.id)},
+            )
+        )
+        return new_request, raw_token
+
     async def list_requests(
         self,
         organization_id: uuid.UUID,
@@ -251,9 +318,7 @@ class ConsentService:
     async def get_request_detail(
         self, organization_id: uuid.UUID, request_id: uuid.UUID
     ) -> ConsentRequestDetail:
-        request = await self.repository.get_request(request_id)
-        if request is None or request.organization_id != organization_id:
-            raise NotFoundError("ConsentRequest", request_id)
+        request = await self._get_owned_request(organization_id, request_id)
 
         submission_read: ConsentSubmissionRead | None = None
         submission = await self.repository.get_submission_by_request(request.id)

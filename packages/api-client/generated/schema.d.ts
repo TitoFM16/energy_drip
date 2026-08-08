@@ -363,6 +363,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/consents/requests/{request_id}/invalidate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Invalidate Consent Request */
+        post: operations["invalidate_consent_request_api_v1_consents_requests__request_id__invalidate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/consents/requests/{request_id}/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend Consent Request
+         * @description Same response shape as create_consent_request: only the raw token is
+         *     ever returned over the wire, never persisted (see ConsentRequest's
+         *     docstring) — the caller embeds it in a fresh WhatsApp link.
+         */
+        post: operations["resend_consent_request_api_v1_consents_requests__request_id__resend_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/consents/templates": {
         parameters: {
             query?: never;
@@ -1533,6 +1572,11 @@ export interface components {
              * Format: uuid
              */
             template_version_id: string;
+        };
+        /** ConsentRequestInvalidate */
+        ConsentRequestInvalidate: {
+            /** Reason */
+            reason: string;
         };
         /** ConsentRequestRead */
         ConsentRequestRead: {
@@ -2917,6 +2961,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConsentRequestDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    invalidate_consent_request_api_v1_consents_requests__request_id__invalidate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsentRequestInvalidate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentRequestRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resend_consent_request_api_v1_consents_requests__request_id__resend_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
                 };
             };
             /** @description Validation Error */

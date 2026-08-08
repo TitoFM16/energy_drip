@@ -4,6 +4,8 @@ import { useConsentTemplates } from '../../features/consents/use-consent-templat
 import {
   useConsentRequests,
   useCreateConsentRequest,
+  useInvalidateConsentRequest,
+  useResendConsentRequest,
 } from '../../features/consents/use-consent-requests';
 
 interface ConsentRequestsSectionProps {
@@ -21,7 +23,11 @@ export function ConsentRequestsSection({ patientId }: ConsentRequestsSectionProp
   const templates = useConsentTemplates();
   const requests = useConsentRequests(patientId);
   const createRequest = useCreateConsentRequest();
+  const invalidateRequest = useInvalidateConsentRequest();
+  const resendRequest = useResendConsentRequest();
   const [selectedVersionId, setSelectedVersionId] = useState('');
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [revokeReason, setRevokeReason] = useState('');
 
   const publishedTemplates = templates.data?.filter((t) => t.latest_version?.published_at) ?? [];
 
@@ -32,6 +38,13 @@ export function ConsentRequestsSection({ patientId }: ConsentRequestsSectionProp
       patient_id: patientId,
       template_version_id: selectedVersionId,
     });
+  }
+
+  async function handleConfirmRevoke(requestId: string) {
+    if (!revokeReason.trim()) return;
+    await invalidateRequest.mutateAsync({ requestId, reason: revokeReason.trim() });
+    setRevokingId(null);
+    setRevokeReason('');
   }
 
   return (
@@ -46,15 +59,80 @@ export function ConsentRequestsSection({ patientId }: ConsentRequestsSectionProp
       {requests.data && requests.data.length > 0 && (
         <ul className="mb-4 flex flex-col gap-2">
           {requests.data.map((request) => (
-            <li
-              key={request.id}
-              className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm"
-            >
-              <span>{new Date(request.created_at).toLocaleString()}</span>
-              <Badge>{STATUS_LABELS[request.status]}</Badge>
+            <li key={request.id} className="rounded-lg bg-slate-50 px-3 py-2 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span>{new Date(request.created_at).toLocaleString()}</span>
+                <div className="flex items-center gap-2">
+                  <Badge>{STATUS_LABELS[request.status]}</Badge>
+                  {request.status === 'pending' && revokingId !== request.id && (
+                    <button
+                      type="button"
+                      onClick={() => setRevokingId(request.id)}
+                      className="text-xs text-slate-500 underline"
+                    >
+                      Revocar
+                    </button>
+                  )}
+                  {(request.status === 'pending' || request.status === 'expired') && (
+                    <button
+                      type="button"
+                      disabled={resendRequest.isPending}
+                      onClick={() => resendRequest.mutate(request.id)}
+                      className="text-xs text-slate-500 underline disabled:opacity-40"
+                    >
+                      Reenviar
+                    </button>
+                  )}
+                </div>
+              </div>
+              {revokingId === request.id && (
+                <div className="mt-2 flex flex-wrap items-end gap-2">
+                  <input
+                    type="text"
+                    value={revokeReason}
+                    onChange={(e) => setRevokeReason(e.target.value)}
+                    placeholder="Motivo de la revocación"
+                    className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    disabled={!revokeReason.trim() || invalidateRequest.isPending}
+                    onClick={() => handleConfirmRevoke(request.id)}
+                  >
+                    Confirmar revocación
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRevokingId(null);
+                      setRevokeReason('');
+                    }}
+                    className="text-xs text-slate-500 underline"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              )}
             </li>
           ))}
         </ul>
+      )}
+      {invalidateRequest.isError && (
+        <ErrorText className="mb-3">No se pudo revocar la solicitud.</ErrorText>
+      )}
+      {resendRequest.isError && (
+        <ErrorText className="mb-3">No se pudo reenviar la solicitud.</ErrorText>
+      )}
+      {resendRequest.data && (
+        <Callout variant="warning" className="mb-3 text-xs">
+          Solo en desarrollo — nuevo enlace de consentimiento:{' '}
+          <code className="break-all rounded bg-amber-100 px-1">
+            http://localhost:5174/c/{resendRequest.data.token}
+          </code>{' '}
+          (en producción se envía por WhatsApp, no se muestra aquí).
+        </Callout>
       )}
 
       <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">

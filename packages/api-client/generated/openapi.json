@@ -1158,6 +1158,19 @@
         "title": "ConsentRequestDetail",
         "type": "object"
       },
+      "ConsentRequestInvalidate": {
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "ConsentRequestInvalidate",
+        "type": "object"
+      },
       "ConsentRequestRead": {
         "properties": {
           "appointment_id": {
@@ -3952,6 +3965,117 @@
           }
         ],
         "summary": "Get Consent Request",
+        "tags": [
+          "consents"
+        ]
+      }
+    },
+    "/api/v1/consents/requests/{request_id}/invalidate": {
+      "post": {
+        "operationId": "invalidate_consent_request_api_v1_consents_requests__request_id__invalidate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentRequestInvalidate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentRequestRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Invalidate Consent Request",
+        "tags": [
+          "consents"
+        ]
+      }
+    },
+    "/api/v1/consents/requests/{request_id}/resend": {
+      "post": {
+        "description": "Same response shape as create_consent_request: only the raw token is\never returned over the wire, never persisted (see ConsentRequest's\ndocstring) \u2014 the caller embeds it in a fresh WhatsApp link.",
+        "operationId": "resend_consent_request_api_v1_consents_requests__request_id__resend_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Resend Consent Request Api V1 Consents Requests  Request Id  Resend Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Resend Consent Request",
         "tags": [
           "consents"
         ]

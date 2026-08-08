@@ -232,24 +232,29 @@ therefore no longer tracked as wholly missing:
   design-tokens CSS files remain unused since neither app reads CSS custom
   properties).
 - Added `apps/e2e`: Playwright end-to-end tests against the real
-  `docker compose up` stack, wired into CI as a third job. 7 flows covered
+  `docker compose up` stack, wired into CI as a third job. 8 flows covered
   (staff login → appointment booking, the full cross-app patient consent
   flow, the public booking form, patient creation as its own
   assertion-bearing test, treatment-plan creation + session recording
-  under the `practitioner` role, the medical-record flows below, and
-  Settings availability-rules management) — verified these actually catch
-  regressions, not just that they pass, by deliberately breaking a button
-  and watching the suite fail before reverting, for the
-  appointment-booking, treatment-plan/session, medical-record, and
-  availability-rules tests. See "End-to-end tests" above for the full
-  list of what's covered vs. still open, and two real environment gotchas
-  (slot-grid alignment near day-end, the booking rate-limiter applying to
-  repeated local test runs) worth knowing about before extending this
-  suite.
+  under the `practitioner` role, the medical-record flows, Settings
+  availability-rules management, and consent-request revoke/resend) —
+  verified these actually catch regressions, not just that they pass, by
+  deliberately breaking a button and watching the suite fail before
+  reverting, for the appointment-booking, treatment-plan/session,
+  medical-record, availability-rules, and consent-lifecycle tests. See
+  "End-to-end tests" above for the full list of what's covered vs. still
+  open, and two real environment gotchas (slot-grid alignment near
+  day-end, the booking rate-limiter applying to repeated local test runs)
+  worth knowing about before extending this suite.
 - Closed most of "Settings administration"'s availability-rules gap:
   added a Settings UI for the practitioner availability-rule API (create,
   list, delete), which previously only existed as a raw API — see
   "Settings administration" below.
+- Closed "Consent request lifecycle": added revoke (with a required
+  reason) and resend for consent requests, and replaced the
+  patient-facing "invalid or expired" catch-all with a distinct message
+  per state (not-found/expired/invalidated/completed) — see "Consent
+  request lifecycle" below.
 - Closed "Complete medical-record API": built org-scoped, role-gated,
   audited APIs for medical history (append-only with finalize/amend, like
   `ClinicalNote`), allergies, conditions, and medications (update +
@@ -689,17 +694,60 @@ Acceptance criteria:
 - Sanitize or safely transform signature input before PDF rendering.
 - Make concurrent submissions of the same single-use token safe and idempotent.
 
-### P1: Consent request lifecycle
+### P1: Consent request lifecycle — done
 
-Acceptance criteria:
+Added `POST /api/v1/consents/requests/{id}/invalidate` (revoke, with a
+required `reason`) and `POST /api/v1/consents/requests/{id}/resend`
+(`apps/api/src/medical_api/modules/consents/{router,service}.py`):
 
-- Resend, expire, revoke, and replace consent requests.
-- Preserve lifecycle events and the reason for invalidation.
-- Make links short-lived and single-use.
-- Store only the token hash.
-- Avoid leaking tokens through logs, analytics, or referrer headers.
-- Provide clear expired, invalid, completed, and unavailable states in the
-  patient application.
+- **Invalidate**: only a `pending` request can be invalidated (409
+  otherwise) — role-gated the same as request creation
+  (`receptionist`/`assistant`/`practitioner`/`organization_admin`).
+  Records a `ConsentEvent(event_type="consent.invalidated")` with the
+  reason in `event_metadata` (this model already existed for
+  `consent.submitted` but was otherwise unused) and an
+  `AuditService.record(...)` call with the reason in `metadata` — the
+  reason is staff-internal audit/event data, **not** returned to the
+  patient-facing endpoint (see below).
+- **Resend**: only a `pending` or `expired` request can be resent (409
+  otherwise, so a completed or already-invalidated request can't be
+  resent). Creates a fresh `ConsentRequest` via the same `create_request`
+  path (new token, new 48h TTL); if the original was still `pending` it's
+  invalidated as superseded so only one live link exists per purpose; an
+  already-`expired` original is left as `expired` rather than relabeled.
+  A `ConsentEvent(event_type="consent.resent")` links the two.
+- **Clear per-state patient errors**: `ConsentService._resolve_active_request`
+  now raises a structured `{"reason": "not_found"|"expired"|"invalidated"|
+"completed"}` detail instead of one generic string, covering all four
+  `ConsentRequestStatus` values plus a true 404. `patient-web`'s
+  `apiFetch` (`apps/patient-web/src/shared/api.ts`) gained an `ApiError`
+  class carrying the parsed `reason`, and `ConsentStartPage` renders a
+  distinct Spanish message per reason (a catch-all "unavailable" message
+  covers anything else — network failure, an unrecognized reason, a plain
+  500). Verified the staff-entered revoke reason is never present in the
+  patient-facing response body.
+- **Staff UI**: `apps/staff-web/src/routes/patients/consent-requests-section.tsx`
+  gained "Revocar" (prompts for a reason inline, like the medical-history
+  correction flow) and "Reenviar" actions per request row, shown only for
+  the statuses each action is valid for. The already-existing dev-mode
+  "here's the link" `Callout` pattern was reused for the freshly resent
+  link.
+- Already true before this pass, confirmed unchanged: links are
+  short-lived (48h TTL) and single-use (status transitions out of
+  `pending` on submit); only the SHA-256 token hash is ever persisted
+  (see `ConsentRequest`'s docstring); no `logger.*` calls exist anywhere
+  in the consents module, so raw tokens were never at risk of being
+  logged.
+- `apps/api/tests/test_consent_lifecycle.py` (7 tests) covers: invalidate
+  status-transition guards, org-scoping on invalidate, the structured
+  per-reason patient error (including that the revoke reason isn't
+  leaked), resend superseding a pending request vs. leaving an expired
+  one alone, resend rejecting completed/invalidated requests, and audit
+  coverage. `apps/e2e/tests/consent-lifecycle.spec.ts` exercises revoke
+  and resend through the real staff-web UI and confirms patient-web shows
+  the right message for each — verified it actually catches regressions
+  by disabling the "Reenviar" button and watching it fail before
+  reverting.
 
 ### P1: Document access, verification, and invalidation
 
@@ -1589,9 +1637,9 @@ shapes — no dependency on `make seed` or any other test's data, avoiding
 the same shared-dev-database pollution problem `test_auth_flows.py` hit
 earlier (see "Backend integration tests").
 
-Covers 7 flows so far (the 7th, Settings administration, is coverage
-beyond the acceptance-criteria list below — it doesn't map onto any of
-the still-open items there):
+Covers 8 flows so far (the 7th and 8th, Settings administration and the
+consent-lifecycle actions, are coverage beyond the acceptance-criteria
+list below — neither maps onto any of the still-open items there):
 
 - Staff logs in **through the real login form** (not a token injected into
   storage), books an available slot for a patient, confirms it lands on
@@ -1623,6 +1671,11 @@ the still-open items there):
   a new rule through the real form, confirms it's visible sorted
   alongside the rules `bootstrapClinic()` seeds as fixture data, then
   deletes it.
+- Staff revokes a pending consent request with a reason, confirms it and
+  a resent replacement both end up in the right lifecycle state, and
+  confirms patient-web shows a distinct "no longer available" message on
+  both the revoked link and the superseded original — not the old generic
+  "invalid or expired" message every failure mode used to share.
 
 Wired into `.github/workflows/ci.yml` as a third job: brings up the full
 Docker Compose stack, waits on `/health/ready` plus each frontend's own
@@ -1635,9 +1688,10 @@ pass**: deliberately hardcoded the "Confirmar cita" button to
 watched it fail with a precise error (button not enabled, 30s timeout),
 reverted, watched it pass again — repeated the same drill for the
 treatment-plan/session test against the "Registrar sesión" button, for
-the medical-record test against the "Finalizar" button, and for the
-Settings availability-rules test against the "Agregar horario" button.
-Also hit two real environment issues
+the medical-record test against the "Finalizar" button, for the Settings
+availability-rules test against the "Agregar horario" button, and for the
+consent-lifecycle test against the "Reenviar" button. Also hit two real
+environment issues
 while building this that are worth knowing about if these start flaking:
 availability-rule time windows are interpreted as UTC and slots are
 generated on a grid aligned to the rule's `start_time` — a narrow window

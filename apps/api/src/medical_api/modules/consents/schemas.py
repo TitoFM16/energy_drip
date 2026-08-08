@@ -100,6 +100,10 @@ class ConsentSubmissionResult(BaseModel):
     eligibility_result: EligibilityResult
 
 
+class ConsentRequestInvalidate(BaseModel):
+    reason: str
+
+
 class ConsentRequestRead(BaseModel):
     id: uuid.UUID
     patient_id: uuid.UUID

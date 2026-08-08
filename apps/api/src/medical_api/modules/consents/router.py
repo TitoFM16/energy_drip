@@ -12,6 +12,7 @@ from medical_api.modules.consents.schemas import (
     ConsentFormRead,
     ConsentQuestionPublic,
     ConsentRequestDetail,
+    ConsentRequestInvalidate,
     ConsentRequestRead,
     ConsentSubmissionCreate,
     ConsentSubmissionResult,
@@ -178,6 +179,61 @@ async def get_consent_request(
 ) -> ConsentRequestDetail:
     service = ConsentService(ConsentRepository(session), session)
     return await service.get_request_detail(user.organization_id, request_id)
+
+
+@router.post(
+    "/requests/{request_id}/invalidate",
+    response_model=ConsentRequestRead,
+    dependencies=[
+        Depends(require_roles("receptionist", "assistant", "practitioner", "organization_admin"))
+    ],
+)
+async def invalidate_consent_request(
+    request_id: uuid.UUID,
+    payload: ConsentRequestInvalidate,
+    user: AuthenticatedUser,
+    session: DbSession,
+) -> ConsentRequestRead:
+    service = ConsentService(ConsentRepository(session), session)
+    request = await service.invalidate_request(user.organization_id, request_id, payload.reason)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="consent_request.invalidated",
+        resource_type="consent_request",
+        resource_id=str(request.id),
+        metadata={"reason": payload.reason},
+    )
+    await session.commit()
+    return request
+
+
+@router.post(
+    "/requests/{request_id}/resend",
+    status_code=201,
+    dependencies=[
+        Depends(require_roles("receptionist", "assistant", "practitioner", "organization_admin"))
+    ],
+)
+async def resend_consent_request(
+    request_id: uuid.UUID, user: AuthenticatedUser, session: DbSession
+) -> dict[str, str]:
+    """Same response shape as create_consent_request: only the raw token is
+    ever returned over the wire, never persisted (see ConsentRequest's
+    docstring) — the caller embeds it in a fresh WhatsApp link.
+    """
+    service = ConsentService(ConsentRepository(session), session)
+    new_request, raw_token = await service.resend_request(user.organization_id, request_id)
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="consent_request.resent",
+        resource_type="consent_request",
+        resource_id=str(new_request.id),
+        metadata={"original_request_id": str(request_id)},
+    )
+    await session.commit()
+    return {"consent_request_id": str(new_request.id), "token": raw_token}
 
 
 @public_router.get("/{token}", response_model=ConsentFormRead)

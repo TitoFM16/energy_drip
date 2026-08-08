@@ -59,3 +59,30 @@ export function useCreateConsentRequest() {
     },
   });
 }
+
+export function useInvalidateConsentRequest() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ requestId, reason }: { requestId: string; reason: string }) =>
+      apiFetch<ConsentRequest>(`/api/v1/consents/requests/${requestId}/invalidate`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['consent-requests'] });
+    },
+  });
+}
+
+export function useResendConsentRequest() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (requestId: string) =>
+      apiFetch<CreateConsentRequestResponse>(`/api/v1/consents/requests/${requestId}/resend`, {
+        method: 'POST',
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['consent-requests'] });
+    },
+  });
+}
