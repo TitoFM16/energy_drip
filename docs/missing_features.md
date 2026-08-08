@@ -338,6 +338,13 @@ UPDATE`) so a concurrent double-submission of the same token is
   E2E locator (`getByLabel('Profesional')`, now ambiguous after the
   user-role-management work). See "Consent delivery automation" below for
   the full writeup.
+- Fixed a real docker-compose startup race, found via the same CI e2e run:
+  `worker`/`worker-queue` could start (and crash, permanently, with no
+  restart policy) before `api`'s own `alembic upgrade head` finished
+  against a truly fresh database — every CI run, and any first `docker
+compose up` locally. Gave `api` a real Docker healthcheck and made both
+  workers depend on it being healthy, not just started. See "Verify and
+  harden the Docker development stack" below for the full writeup.
 
 ## Priority levels
 
@@ -2250,7 +2257,7 @@ Acceptance criteria:
 
 ## 10. Infrastructure and production operations
 
-### P0: Verify and harden the Docker development stack — MinIO bucket init done
+### P0: Verify and harden the Docker development stack — MinIO bucket init and worker startup ordering done
 
 The Compose and Dockerfile setup exists but needs a repeatable end-to-end
 verification.
@@ -2268,11 +2275,34 @@ present — no error, confirming idempotency; ran a full consent submission
 immediately after — no `NoSuchBucket` 500 (this was the exact failure this
 session hit manually before this fix existed).
 
+Also closed most of "fresh checkout can build and start every service" —
+found a real race while investigating an intermittent CI e2e failure:
+`worker`/`worker-queue` only depended on `postgres`/`redis` being healthy
+(plus, for `worker`, `api: condition: service_started`, which only means
+the container process began, not that its entrypoint's `alembic upgrade
+head` had actually finished). Neither has a migration step of its own, by
+design, to avoid two processes racing to run migrations concurrently — they
+just assert the schema matches head and crash (with no restart policy) if
+it doesn't. Against a truly fresh database (every CI run; a first `docker
+compose up` locally), `api`'s own migration step can still be running when
+`worker`/`worker-queue` start, so they'd crash and stay dead for the rest
+of the run. Fixed by giving `api` a real Docker `healthcheck:` (`curl
+/health/ready` — only reachable at all once the entrypoint's migration
+step finishes and the server starts listening, so it's a correct proxy for
+"migrations are done") and changing both workers' `depends_on: api` to
+`condition: service_healthy`. Verified: rebuilt `api`/`worker`/`worker-queue`
+and watched `docker compose up`'s own output confirm the ordering
+(`api-1 Healthy` logged before either worker container starts), confirmed
+neither worker's logs show the schema-mismatch crash, and a full Playwright
+E2E run passed cleanly afterward.
+
 Remaining acceptance criteria:
 
-- Fresh checkout can build and start every service (not verified end-to-end
-  from a truly clean checkout this session — only individual container
-  restarts against already-provisioned volumes).
+- The above was verified against containers rebuilt on top of an
+  already-migrated local database, not a truly empty one (rebuilding from
+  a wiped volume locally is destructive to the existing dev database) —
+  the real proof is the next CI run, which always starts from an empty
+  database.
 - ~~Migrations run exactly once and failures are visible.~~ Done —
   `apps/api/docker-entrypoint.sh` already ran `alembic upgrade head` (with
   `set -e`, so a failure stops the container rather than starting against

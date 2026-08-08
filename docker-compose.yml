@@ -68,6 +68,20 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      # Worker/worker-queue only assert the schema matches head and crash
+      # (with no restart policy) if it doesn't — they have no migration
+      # step of their own, by design, to avoid two processes racing to run
+      # `alembic upgrade head` concurrently. Without this healthcheck, both
+      # only waited for this container to *start*, not for its
+      # entrypoint's own `alembic upgrade head` to actually finish, so a
+      # freshly built stack (every CI run; any first `docker compose up`
+      # against an empty database) could start them before migrations were
+      # applied and leave them dead for the rest of the run.
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health/ready"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
 
   worker:
     build:
@@ -89,7 +103,7 @@ services:
       redis:
         condition: service_healthy
       api:
-        condition: service_started
+        condition: service_healthy
 
   worker-queue:
     build:
@@ -113,6 +127,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      api:
         condition: service_healthy
 
   staff-web:
