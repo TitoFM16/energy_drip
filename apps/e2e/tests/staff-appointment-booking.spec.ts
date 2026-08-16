@@ -50,4 +50,21 @@ test('staff logs in, books an available slot for a patient, and sees it on the a
 
   await appointmentRow.getByRole('button', { name: 'Confirmar' }).click();
   await expect(appointmentRow.getByText(/Programada → Confirmada ·.*E2E Admin/)).toBeVisible();
+
+  // Reschedule: moving the appointment to a different slot updates its
+  // displayed time without touching its status or status history.
+  const originalTimeText = await appointmentRow.locator('p.font-medium').innerText();
+  await appointmentRow.getByRole('button', { name: 'Reprogramar' }).click();
+  await expect(
+    page.getByText(new RegExp(`Reprogramando cita de ${patient.first_name}`)),
+  ).toBeVisible();
+
+  const rescheduleSlotButton = page.locator('button', { hasText: /\d{1,2}:\d{2}/ }).first();
+  await expect(rescheduleSlotButton).toBeVisible({ timeout: 15_000 });
+  await rescheduleSlotButton.click();
+
+  await expect(page.getByText(/Reprogramando cita de/)).toHaveCount(0);
+  await expect(appointmentRow.locator('p.font-medium')).not.toHaveText(originalTimeText);
+  // Rescheduling only moves the time — status is untouched.
+  await expect(appointmentRow.locator('span', { hasText: 'Confirmada' })).toBeVisible();
 });

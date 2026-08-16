@@ -365,6 +365,18 @@ compose up` locally. Gave `api` a real Docker healthcheck and made both
   despite existing for exactly that purpose. Agenda now has a "Ver
   historial" toggle per appointment. See "Appointment management" below
   for the full writeup.
+- Closed "Edit/reschedule an existing appointment": a booked appointment
+  could previously only have its status changed, never moved to a
+  different time. `PATCH /appointments/{id}/reschedule` reuses the same
+  availability/conflict checks `schedule()` already enforces (excluding
+  the appointment being moved from its own conflict check), rejects
+  rescheduling a cancelled/completed/no-show appointment, and records an
+  `appointment.rescheduled` audit entry with the old and new times.
+  Agenda's "Reprogramar" action lets staff pick a new slot from the same
+  availability grid used for booking (computed at the appointment's own
+  duration, not always 30 minutes); a status change or status history
+  entry is deliberately not created since the status itself doesn't
+  change. See "Appointment management" below for the full writeup.
 
 ## Priority levels
 
@@ -547,12 +559,50 @@ Confirmada" entry appear without a page reload; extended
 `staff-appointment-booking.spec.ts` to cover the same flow, with the
 standard deliberate-break regression proof.
 
+A booked appointment can now be moved to a different time. `AppointmentReschedule`
+(`starts_at`/`ends_at`) is validated by `AppointmentService.reschedule()`
+(`modules/scheduling/service.py`), which reuses `_check_within_availability`
+and both `has_conflict`/`has_room_conflict` from `schedule()` — the repository
+conflict checks gained an `exclude_appointment_id` param so an appointment
+being moved doesn't spuriously conflict with itself. Rescheduling a
+`cancelled`/`completed`/`no_show` appointment is rejected (`409`). The
+endpoint (`PATCH /appointments/{id}/reschedule`, same role gate as booking)
+records an `appointment.rescheduled` audit entry with both the previous and
+new times — capturing the previous times as plain strings _before_ calling
+the service matters here, since the repository's SQLAlchemy identity map
+means a second `.get()` for the same appointment returns the same Python
+object `reschedule()` then mutates in place, not an independent snapshot.
+
+In staff-web, each non-terminal appointment in the Agenda's day list has a
+"Reprogramar" action. Clicking it puts the "Horarios disponibles" panel into
+reschedule mode (a banner names the patient, with a "Cancelar" escape hatch)
+and recomputes the availability grid at the appointment's own duration
+(`ends_at - starts_at`) rather than the booking flow's fixed 30 minutes, so a
+longer treatment session doesn't offer slots that are shorter than it needs.
+Picking a slot calls the reschedule endpoint directly (no patient picker —
+the patient doesn't change) and clears the banner on success. Rescheduling
+deliberately does not touch `AppointmentStatusHistory` or enqueue an outbox
+event — the status itself doesn't change, and (per the existing
+"Trigger the appropriate outbox events after state changes" gap below) this
+codebase doesn't enqueue events nothing consumes yet.
+
+Verified: 7 new pytest cases in `apps/api/tests/test_appointment_reschedule.py`
+(in-window move succeeds with no new status-history entry, outside-availability
+rejected, moving onto another appointment's slot rejected, moving onto the
+appointment's own current slot succeeds — the `exclude_appointment_id`
+regression guard, rescheduling a cancelled appointment rejected, cross-org
+404, and the audit entry's old/new times are correct); live curl against the
+running stack confirmed a reschedule and the resulting audit row, plus a
+follow-up booking attempt on the vacated old slot's replacement conflicting
+correctly; live in a browser (clicked "Reprogramar", picked a new slot, saw
+the appointment's displayed time update and the availability grid refresh);
+extended `staff-appointment-booking.spec.ts` with a reschedule step, with the
+standard deliberate-break regression proof (disabled the "Reprogramar"
+button, watched Playwright fail specifically on that click before reverting).
+
 Remaining acceptance criteria:
 
 - Week view (day view only for now).
-- Edit/reschedule an existing appointment (only status changes and creation
-  exist; no way to move a booked appointment to a different slot — the new
-  availability/conflict checks above only cover creation).
 - Select location, room, and treatment when booking (only patient +
   practitioner + slot today; rooms have no create/list API or UI yet even
   though booking now validates a room_id if one is supplied).
@@ -2603,9 +2653,9 @@ Acceptance criteria:
    "Complete medical-record API").
 5. ~~Connect the Agenda UI to the new availability APIs (and the Settings UI
    to the new practitioner API)~~ Done — day view, booking, status changes,
-   and practitioner management are all live. Still open from this item: week
-   view, editing/rescheduling, and room-conflict/exception/timezone
-   validation (see "Appointment
+   rescheduling, and practitioner management are all live, and room conflicts
+   are already rejected. Still open from this item: week view, and
+   exception/timezone validation for availability rules (see "Appointment
    management").
 6. ~~Finish treatment plans, sessions, formulas, evolution, and follow-ups.~~
    Catalogue, plans, and session recording with clinical evolution are done.

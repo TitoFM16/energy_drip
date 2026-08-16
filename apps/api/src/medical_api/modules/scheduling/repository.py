@@ -49,7 +49,12 @@ class AppointmentRepository:
         return list((await self.session.execute(stmt)).scalars().all())
 
     async def has_conflict(
-        self, practitioner_id: uuid.UUID, starts_at: datetime, ends_at: datetime
+        self,
+        practitioner_id: uuid.UUID,
+        starts_at: datetime,
+        ends_at: datetime,
+        *,
+        exclude_appointment_id: uuid.UUID | None = None,
     ) -> bool:
         stmt = select(Appointment.id).where(
             Appointment.practitioner_id == practitioner_id,
@@ -57,10 +62,17 @@ class AppointmentRepository:
             Appointment.starts_at < ends_at,
             Appointment.ends_at > starts_at,
         )
+        if exclude_appointment_id is not None:
+            stmt = stmt.where(Appointment.id != exclude_appointment_id)
         return (await self.session.execute(stmt)).first() is not None
 
     async def has_room_conflict(
-        self, room_id: uuid.UUID, starts_at: datetime, ends_at: datetime
+        self,
+        room_id: uuid.UUID,
+        starts_at: datetime,
+        ends_at: datetime,
+        *,
+        exclude_appointment_id: uuid.UUID | None = None,
     ) -> bool:
         stmt = select(Appointment.id).where(
             Appointment.room_id == room_id,
@@ -68,6 +80,8 @@ class AppointmentRepository:
             Appointment.starts_at < ends_at,
             Appointment.ends_at > starts_at,
         )
+        if exclude_appointment_id is not None:
+            stmt = stmt.where(Appointment.id != exclude_appointment_id)
         return (await self.session.execute(stmt)).first() is not None
 
     async def create(self, appointment: Appointment) -> Appointment:

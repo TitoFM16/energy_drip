@@ -27,6 +27,17 @@ class AppointmentStatusUpdate(BaseModel):
     reason: str | None = None
 
 
+class AppointmentReschedule(BaseModel):
+    starts_at: datetime
+    ends_at: datetime
+
+    @model_validator(mode="after")
+    def check_time_range(self) -> "AppointmentReschedule":
+        if self.ends_at <= self.starts_at:
+            raise ValueError("ends_at must be after starts_at")
+        return self
+
+
 class AppointmentRead(BaseModel):
     id: uuid.UUID
     organization_id: uuid.UUID

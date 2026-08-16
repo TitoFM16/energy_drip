@@ -5,6 +5,7 @@ import { usePatients } from '../../features/patients/use-patients';
 import { usePractitioners } from '../../features/scheduling/use-practitioners';
 import { useAppointmentStatusHistory } from '../../features/scheduling/use-appointment-status-history';
 import { useAvailability } from '../../features/scheduling/use-availability';
+import { useRescheduleAppointment } from '../../features/scheduling/use-reschedule-appointment';
 import { useUpdateAppointmentStatus } from '../../features/scheduling/use-update-appointment-status';
 import type {
   Appointment,
@@ -35,17 +36,30 @@ const STATUS_ACTIONS: { label: string; status: AppointmentStatus }[] = [
   { label: 'Cancelar', status: 'cancelled' },
 ];
 
+function appointmentDurationMinutes(appointment: Appointment): number {
+  const minutes = Math.round(
+    (new Date(appointment.ends_at).getTime() - new Date(appointment.starts_at).getTime()) / 60000,
+  );
+  return Math.min(480, Math.max(5, minutes));
+}
+
 export function AgendaPage() {
   const [date, setDate] = useState(todayUTC());
   const [practitionerId, setPractitionerId] = useState<string | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<AvailableSlot | null>(null);
+  const [reschedulingAppointment, setReschedulingAppointment] = useState<Appointment | null>(null);
 
   const practitioners = usePractitioners();
   const patients = usePatients();
   const { start, end } = dayRangeUTC(date);
   const appointments = useAppointments(start, end);
-  const availability = useAvailability(practitionerId, date, 30);
+  const availability = useAvailability(
+    practitionerId,
+    date,
+    reschedulingAppointment ? appointmentDurationMinutes(reschedulingAppointment) : 30,
+  );
   const updateStatus = useUpdateAppointmentStatus();
+  const rescheduleAppointment = useRescheduleAppointment();
 
   useEffect(() => {
     if (!practitionerId && practitioners.data && practitioners.data.length > 0) {
@@ -62,6 +76,19 @@ export function AgendaPage() {
 
   function appointmentLabel(appointment: Appointment): string {
     return patientNameById.get(appointment.patient_id) ?? 'Paciente desconocido';
+  }
+
+  async function handleSlotClick(slot: AvailableSlot) {
+    if (reschedulingAppointment) {
+      await rescheduleAppointment.mutateAsync({
+        appointmentId: reschedulingAppointment.id,
+        starts_at: slot.starts_at,
+        ends_at: slot.ends_at,
+      });
+      setReschedulingAppointment(null);
+      return;
+    }
+    setSelectedSlot(slot);
   }
 
   return (
@@ -134,6 +161,11 @@ export function AgendaPage() {
                 appointment={appointment}
                 label={appointmentLabel(appointment)}
                 updateStatus={updateStatus}
+                onReschedule={() => {
+                  setSelectedSlot(null);
+                  setReschedulingAppointment(appointment);
+                }}
+                isRescheduling={reschedulingAppointment?.id === appointment.id}
               />
             ))}
           </ul>
@@ -143,7 +175,7 @@ export function AgendaPage() {
           <h2 className="mb-3 text-sm font-semibold tracking-wide text-slate-500 uppercase">
             Horarios disponibles
           </h2>
-          {selectedSlot && practitionerId ? (
+          {selectedSlot && practitionerId && !reschedulingAppointment ? (
             <BookingPanel
               practitionerId={practitionerId}
               slot={selectedSlot}
@@ -152,6 +184,26 @@ export function AgendaPage() {
             />
           ) : (
             <>
+              {reschedulingAppointment && (
+                <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  <span>
+                    Reprogramando cita de {appointmentLabel(reschedulingAppointment)} — elige un
+                    nuevo horario.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setReschedulingAppointment(null)}
+                    className="shrink-0 underline"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              )}
+              {rescheduleAppointment.isError && (
+                <ErrorText className="mb-3">
+                  No se pudo reprogramar la cita. Es posible que el horario ya no esté disponible.
+                </ErrorText>
+              )}
               {availability.isLoading && <p className="text-slate-500">Cargando horarios...</p>}
               {availability.isError && (
                 <ErrorText>No se pudieron cargar los horarios disponibles.</ErrorText>
@@ -166,8 +218,9 @@ export function AgendaPage() {
                   <button
                     key={slot.starts_at}
                     type="button"
-                    onClick={() => setSelectedSlot(slot)}
-                    className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-700 hover:border-slate-900 hover:text-slate-900"
+                    disabled={rescheduleAppointment.isPending}
+                    onClick={() => handleSlotClick(slot)}
+                    className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-700 hover:border-slate-900 hover:text-slate-900 disabled:opacity-40"
                   >
                     {formatTimeUTC(slot.starts_at)}
                   </button>
@@ -185,10 +238,14 @@ function AppointmentRow({
   appointment,
   label,
   updateStatus,
+  onReschedule,
+  isRescheduling,
 }: {
   appointment: Appointment;
   label: string;
   updateStatus: ReturnType<typeof useUpdateAppointmentStatus>;
+  onReschedule: () => void;
+  isRescheduling: boolean;
 }) {
   const [showHistory, setShowHistory] = useState(false);
   const history = useAppointmentStatusHistory(appointment.id, showHistory);
@@ -219,6 +276,13 @@ function AppointmentRow({
               {action.label}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={onReschedule}
+            className="rounded-full border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+          >
+            {isRescheduling ? 'Reprogramando…' : 'Reprogramar'}
+          </button>
         </div>
       )}
       <button

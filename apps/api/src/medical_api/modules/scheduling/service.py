@@ -160,6 +160,39 @@ class AppointmentService:
             )
         return appointment
 
+    async def reschedule(
+        self,
+        organization_id: uuid.UUID,
+        appointment_id: uuid.UUID,
+        starts_at: datetime,
+        ends_at: datetime,
+    ) -> Appointment:
+        appointment = await self.repository.get(organization_id, appointment_id)
+        if appointment is None:
+            raise NotFoundError("Appointment", appointment_id)
+        if appointment.status in (
+            AppointmentStatus.CANCELLED,
+            AppointmentStatus.COMPLETED,
+            AppointmentStatus.NO_SHOW,
+        ):
+            raise ConflictError(f"Cannot reschedule an appointment that is {appointment.status}")
+
+        await self._check_within_availability(
+            organization_id, appointment.practitioner_id, starts_at, ends_at
+        )
+        if await self.repository.has_conflict(
+            appointment.practitioner_id, starts_at, ends_at, exclude_appointment_id=appointment.id
+        ):
+            raise ConflictError("Practitioner already has an appointment in that time range")
+        if appointment.room_id is not None and await self.repository.has_room_conflict(
+            appointment.room_id, starts_at, ends_at, exclude_appointment_id=appointment.id
+        ):
+            raise ConflictError("Room already has an appointment in that time range")
+
+        appointment.starts_at = starts_at
+        appointment.ends_at = ends_at
+        return appointment
+
     async def get_status_history(
         self, organization_id: uuid.UUID, appointment_id: uuid.UUID
     ) -> list[AppointmentStatusHistoryRead]:

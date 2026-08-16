@@ -15,6 +15,7 @@ from medical_api.modules.scheduling.repository import (
 from medical_api.modules.scheduling.schemas import (
     AppointmentCreate,
     AppointmentRead,
+    AppointmentReschedule,
     AppointmentStatusHistoryRead,
     AppointmentStatusUpdate,
     AvailabilityRuleCreate,
@@ -93,6 +94,47 @@ async def update_appointment_status(
         resource_type="appointment",
         resource_id=str(appointment.id),
         metadata={"status": str(payload.status), "reason": payload.reason},
+    )
+    await session.commit()
+    return appointment
+
+
+@router.patch(
+    "/{appointment_id}/reschedule",
+    response_model=AppointmentRead,
+    dependencies=[
+        Depends(require_roles("receptionist", "assistant", "practitioner", "organization_admin"))
+    ],
+)
+async def reschedule_appointment(
+    appointment_id: uuid.UUID,
+    payload: AppointmentReschedule,
+    user: AuthenticatedUser,
+    session: DbSession,
+) -> AppointmentRead:
+    service = AppointmentService(AppointmentRepository(session), session)
+    # Same identity-mapped object will be mutated in place by reschedule(),
+    # so the old times must be captured as plain strings now — reading
+    # `previous.starts_at` again after the call would already see the new
+    # value since it's the same ORM instance, not a separate snapshot.
+    previous = await service.repository.get(user.organization_id, appointment_id)
+    previous_starts_at = previous.starts_at.isoformat() if previous else None
+    previous_ends_at = previous.ends_at.isoformat() if previous else None
+    appointment = await service.reschedule(
+        user.organization_id, appointment_id, payload.starts_at, payload.ends_at
+    )
+    await AuditService(session).record(
+        organization_id=user.organization_id,
+        actor_user_id=user.user_id,
+        action="appointment.rescheduled",
+        resource_type="appointment",
+        resource_id=str(appointment.id),
+        metadata={
+            "previous_starts_at": previous_starts_at,
+            "previous_ends_at": previous_ends_at,
+            "starts_at": appointment.starts_at.isoformat(),
+            "ends_at": appointment.ends_at.isoformat(),
+        },
     )
     await session.commit()
     return appointment
