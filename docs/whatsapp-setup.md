@@ -131,11 +131,6 @@ pieces already verified with synthetic data this session):
 Not blocking the above, but worth knowing about (see `missing_features.md`
 for full detail):
 
-- Reminders (`appointment_reminders.check_due_reminders`,
-  `missed_appointment.check_missed_appointments`) still have no scheduler
-  triggering them periodically — see "Automated reminder scheduling".
-- No opt-out handling — a patient replying "STOP" (or Meta's own opt-out
-  signal) isn't processed anywhere yet.
 - No template param validation before sending — a mismatched param count
   or a typo'd template name only surfaces at send time as a
   `WhatsAppRejectedError`, not earlier.
