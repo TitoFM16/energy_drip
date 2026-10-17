@@ -2,7 +2,7 @@
 # is a uv workspace: resolving medical-api's deps requires the root
 # pyproject.toml/uv.lock and every declared workspace member to be present,
 # not just this app's own directory.
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential libpq-dev curl \
