@@ -37,7 +37,7 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
         with:
           version: "0.8.17"
       - run: uv sync --all-packages
