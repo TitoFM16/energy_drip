@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from medical_api.api.error_handlers import register_error_handlers
@@ -14,7 +15,6 @@ from medical_api.core.middleware import (
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
 )
-from medical_api.core.rate_limit import get_redis
 from medical_api.core.schema_check import assert_schema_matches_head
 from medical_api.integrations.object_storage.client import ensure_bucket_exists
 
@@ -30,13 +30,8 @@ async def lifespan(_: FastAPI):
     # production, and failing loudly at startup beats a confusing runtime
     # error from the first request that touches the mismatched table/column.
     await assert_schema_matches_head(engine)
-    if not settings.is_production:
-        # Dev/test convenience: the local MinIO bucket doesn't exist until
-        # something creates it, and nothing in the Docker stack did — the
-        # first consent submission would 500 on signature upload with
-        # NoSuchBucket. See ensure_bucket_exists() for why this is gated to
-        # non-production.
-        ensure_bucket_exists()
+    ensure_bucket_exists()
+    settings.public_media_path.mkdir(parents=True, exist_ok=True)
     yield
 
 
@@ -67,6 +62,9 @@ app.add_middleware(SecurityHeadersMiddleware, is_production=settings.is_producti
 
 register_error_handlers(app)
 app.include_router(api_router)
+app.mount(
+    "/media", StaticFiles(directory=settings.public_media_path, check_dir=False), name="media"
+)
 
 
 @app.get("/health", tags=["health"])
@@ -85,9 +83,7 @@ async def health_check() -> dict[str, str]:
 async def readiness_check(response: Response) -> dict[str, str]:
     """Dependency-aware readiness — for load balancer / orchestrator
     routing decisions ("should traffic go to this instance right now"),
-    not for triggering restarts. Checks the two hard dependencies every
-    request potentially needs: Postgres and Redis (the latter for
-    rate-limiting the public booking endpoint).
+    not for triggering restarts. Checks Postgres, the only shared runtime dependency.
     """
     checks = {}
     try:
@@ -96,12 +92,6 @@ async def readiness_check(response: Response) -> dict[str, str]:
         checks["database"] = "ok"
     except Exception as exc:
         checks["database"] = f"error: {exc}"
-
-    try:
-        await get_redis().ping()
-        checks["redis"] = "ok"
-    except Exception as exc:
-        checks["redis"] = f"error: {exc}"
 
     if any(v != "ok" for v in checks.values()):
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE

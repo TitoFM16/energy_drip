@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from medical_api.core.exceptions import ConflictError, NotFoundError
 from medical_api.integrations.object_storage.client import (
@@ -10,6 +11,7 @@ from medical_api.integrations.object_storage.client import (
     generate_presigned_download_url,
     upload_bytes,
 )
+from medical_api.integrations.pdf.generator import render_consent_pdf
 from medical_api.modules.audit.service import AuditService
 from medical_api.modules.consents.models import (
     ConsentAnswer,
@@ -40,7 +42,8 @@ from medical_api.modules.consents.schemas import (
     DocumentVerifyResult,
 )
 from medical_api.modules.consents.validation import validate_submission_answers
-from medical_api.modules.notifications.service import enqueue_event
+from medical_api.modules.patients.repository import PatientRepository
+from medical_api.modules.scheduling.repository import AppointmentRepository
 from medical_api.shared.domain.eligibility import evaluate_rules
 from medical_api.shared.utilities.hashing import sha256_hash
 from medical_api.shared.utilities.svg_sanitizer import sanitize_signature_svg
@@ -125,6 +128,24 @@ class ConsentService:
         appointment_id: uuid.UUID | None,
         template_version_id: uuid.UUID,
     ) -> tuple[ConsentRequest, str]:
+        if await PatientRepository(self.session).get(organization_id, patient_id) is None:
+            raise NotFoundError("Patient", patient_id)
+        version = await self.repository.get_template_version(template_version_id)
+        template = (
+            await ConsentTemplateRepository(self.session).get_template(
+                organization_id, version.template_id
+            )
+            if version
+            else None
+        )
+        if template is None or not template.is_active or version.published_at is None:
+            raise NotFoundError("PublishedConsentTemplate", template_version_id)
+        if appointment_id is not None:
+            appointment = await AppointmentRepository(self.session).get(
+                organization_id, appointment_id
+            )
+            if appointment is None or appointment.patient_id != patient_id:
+                raise NotFoundError("Appointment", appointment_id)
         raw_token, token_hash = generate_opaque_token()
         request = ConsentRequest(
             organization_id=organization_id,
@@ -254,7 +275,9 @@ class ConsentService:
             f"organizations/{request.organization_id}/patients/{request.patient_id}/"
             f"signatures/{uuid.uuid4()}.svg"
         )
-        upload_bytes(signature_key, sanitized_signature_svg.encode(), "image/svg+xml")
+        await run_in_threadpool(
+            upload_bytes, signature_key, sanitized_signature_svg.encode(), "image/svg+xml"
+        )
         self.session.add(
             ConsentSignature(submission_id=submission.id, signature_svg_path=signature_key)
         )
@@ -266,14 +289,8 @@ class ConsentService:
             )
         )
 
-        # Same transaction as the submission: the worker picks this up to
-        # generate the immutable PDF (see docs/architecture for the flow).
-        await enqueue_event(
-            self.session,
-            organization_id=request.organization_id,
-            event_type="consent.submitted",
-            payload={"consent_request_id": str(request.id), "submission_id": str(submission.id)},
-        )
+        await self.session.flush()
+        await DocumentService(self.repository, self.session).generate(submission.id)
         # No actor_user_id — the patient authenticates via the single-use
         # token, not a staff session.
         await AuditService(self.session).record(
@@ -464,7 +481,7 @@ class DocumentService:
         self, organization_id: uuid.UUID, document_id: uuid.UUID
     ) -> DocumentVerifyResult:
         document = await self._get_owned_document(organization_id, document_id)
-        data = download_bytes(document.storage_key)
+        data = await run_in_threadpool(download_bytes, document.storage_key)
         recomputed = sha256_hash(data)
         return DocumentVerifyResult(
             sha256_hash=document.sha256_hash,
@@ -495,24 +512,67 @@ class DocumentService:
         actor_user_id: uuid.UUID,
         reason: str,
     ) -> None:
-        # The actual PDF regeneration happens asynchronously in the worker
-        # (see apps/worker/.../activities/generate_pdf.py) — this just
-        # authorizes the request, resolves it down to the submission the
-        # worker needs, and hands off via the outbox, same
-        # write-then-async-consume split every other workflow in this
-        # codebase uses (see consent.submitted).
         document = await self._get_owned_document(organization_id, document_id)
-        submission = await self.repository.get_submission(document.submission_id)
+        await self.generate(document.submission_id, reason=reason, actor_user_id=actor_user_id)
+
+    async def generate(
+        self,
+        submission_id: uuid.UUID,
+        *,
+        reason: str | None = None,
+        actor_user_id: uuid.UUID | None = None,
+    ) -> ConsentDocument:
+        submission = await self.repository.get_submission(submission_id)
         if submission is None:
-            raise NotFoundError("ConsentSubmission", document.submission_id)
-        await enqueue_event(
-            self.session,
-            organization_id=organization_id,
-            event_type="consent.document.regenerate_requested",
-            payload={
-                "consent_request_id": str(submission.consent_request_id),
-                "submission_id": str(document.submission_id),
-                "reason": reason,
-                "requested_by_user_id": str(actor_user_id),
-            },
+            raise NotFoundError("ConsentSubmission", submission_id)
+        request = await self.repository.get_request(submission.consent_request_id)
+        # Serialize regeneration as well as submission so only one current version exists.
+        await self.repository.get_submission_with_org_check(
+            request.organization_id, submission_id, for_update=True
         )
+        current = await self.repository.get_current_document_for_submission(submission_id)
+        signature = await self.repository.get_signature(submission_id)
+        if signature is None:
+            raise ConflictError("The signed record has no signature to render")
+        version = await self.repository.get_template_version(request.template_version_id)
+        patient = await PatientRepository(self.session).get(
+            request.organization_id, request.patient_id
+        )
+        answers = await self.repository.list_answers(submission_id)
+        signature_svg = await run_in_threadpool(download_bytes, signature.signature_svg_path)
+        pdf = await run_in_threadpool(
+            render_consent_pdf,
+            patient_name=f"{patient.first_name} {patient.last_name}",
+            template_body_markdown=version.body_markdown,
+            answers=[{"field_key": a.field_key, "value": a.value.get("value")} for a in answers],
+            signature_svg=signature_svg.decode(),
+            signed_at=submission.submitted_at,
+            ip_address=submission.ip_address,
+        )
+        key = (
+            f"organizations/{request.organization_id}/patients/{request.patient_id}/"
+            f"consents/{request.id}/{uuid.uuid4()}.pdf"
+        )
+        await run_in_threadpool(upload_bytes, key, pdf, "application/pdf")
+        prior = await self.repository.list_documents_for_submission(submission_id)
+        if current is not None:
+            current.is_current = False
+        version_number = max((d.document_version for d in prior), default=0) + 1
+        document = await self.repository.create_document(
+            ConsentDocument(
+                submission_id=submission_id,
+                storage_key=key,
+                sha256_hash=sha256_hash(pdf),
+                document_version=version_number,
+                regenerated_reason=reason,
+            )
+        )
+        await AuditService(self.session).record(
+            organization_id=request.organization_id,
+            actor_user_id=actor_user_id,
+            action="document.created" if version_number == 1 else "document.regenerated",
+            resource_type="consent_document",
+            resource_id=str(document.id),
+            metadata={"document_version": version_number},
+        )
+        return document

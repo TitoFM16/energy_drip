@@ -9,6 +9,7 @@ docstring for the full rationale.
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 import pytest_asyncio
@@ -26,9 +27,9 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 _NEXT_MONDAY = datetime.now(UTC).date() + timedelta(
     days=(7 - datetime.now(UTC).date().weekday()) % 7 or 7
 )
-_IN_WINDOW_START = datetime.combine(_NEXT_MONDAY, datetime.min.time(), tzinfo=UTC) + timedelta(
-    hours=9
-)
+_IN_WINDOW_START = datetime.combine(
+    _NEXT_MONDAY, datetime.min.time(), tzinfo=ZoneInfo("America/Bogota")
+) + timedelta(hours=9)
 
 
 @pytest_asyncio.fixture(loop_scope="session")

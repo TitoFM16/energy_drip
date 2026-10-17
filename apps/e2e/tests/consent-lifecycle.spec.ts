@@ -20,7 +20,7 @@ test('staff revokes and resends a consent request, patient sees a clear state fo
   await page.getByLabel('Correo electrónico').fill(clinic.adminEmail);
   await page.getByLabel('Contraseña').fill(clinic.adminPassword);
   await page.getByRole('button', { name: 'Entrar' }).click();
-  await expect(page).toHaveURL(`${STAFF_WEB_URL}/`);
+  await expect(page).toHaveURL(`${STAFF_WEB_URL}/agenda`);
 
   await page.goto(`${STAFF_WEB_URL}/patients/${patient.id}`);
   const pendingRow = page.locator('li', { hasText: 'Pendiente' });
@@ -49,12 +49,12 @@ test('staff revokes and resends a consent request, patient sees a clear state fo
   await page.goto(`${STAFF_WEB_URL}/patients/${patient.id}`);
   const secondPendingRow = page.locator('li', { hasText: 'Pendiente' });
   await expect(secondPendingRow).toBeVisible({ timeout: 10_000 });
-  await secondPendingRow.getByRole('button', { name: 'Reenviar' }).click();
+  await secondPendingRow.getByRole('button', { name: 'Crear nuevo enlace' }).click();
 
   await expect(page.locator('li', { hasText: 'Invalidado' })).toHaveCount(2, { timeout: 10_000 });
-  const newLinkCallout = page.getByText(/nuevo enlace de consentimiento/);
-  await expect(newLinkCallout).toBeVisible({ timeout: 10_000 });
-  const newLinkText = await page.locator('code').first().textContent();
+  const newLink = page.getByRole('textbox', { name: 'Enlace de consentimiento', exact: true });
+  await expect(newLink).toBeVisible({ timeout: 10_000 });
+  const newLinkText = await newLink.inputValue();
   const newToken = newLinkText?.split('/c/')[1];
   expect(newToken).toBeTruthy();
   expect(newToken).not.toBe(second.token);

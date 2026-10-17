@@ -3,7 +3,8 @@ import { apiFetch } from '../../shared/utilities/api';
 import type { Practitioner } from './types';
 
 interface CreatePractitionerInput {
-  user_id: string;
+  user_id?: string;
+  full_name?: string;
   specialty?: string;
 }
 

@@ -56,7 +56,7 @@ test('patient completes the consent flow and staff sees it reviewed', async ({ p
   await page.getByLabel('Correo electrónico').fill(clinic.adminEmail);
   await page.getByLabel('Contraseña').fill(clinic.adminPassword);
   await page.getByRole('button', { name: 'Entrar' }).click();
-  await expect(page).toHaveURL(`${STAFF_WEB_URL}/`);
+  await expect(page).toHaveURL(`${STAFF_WEB_URL}/agenda`);
 
   // The eligibility result specifically lives on the Consentimientos
   // review panel (clicking a request opens its detail), not the patient

@@ -44,6 +44,7 @@ interface CreateConsentRequestInput {
 interface CreateConsentRequestResponse {
   consent_request_id: string;
   token: string;
+  url: string;
 }
 
 export function useCreateConsentRequest() {

@@ -1,10 +1,13 @@
 import uuid
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from starlette.concurrency import run_in_threadpool
 
 from medical_api.api.dependencies import AuthenticatedUser, DbSession
+from medical_api.core.config import get_settings
 from medical_api.core.exceptions import NotFoundError
 from medical_api.core.security import require_roles
+from medical_api.integrations.object_storage.client import download_bytes, resolve_download_token
 from medical_api.modules.audit.service import AuditService
 from medical_api.modules.consents.models import ConsentRequestStatus
 from medical_api.modules.consents.repository import ConsentRepository, ConsentTemplateRepository
@@ -175,7 +178,11 @@ async def create_consent_request(
         metadata={"patient_id": str(patient_id)},
     )
     await session.commit()
-    return {"consent_request_id": str(request.id), "token": raw_token}
+    return {
+        "consent_request_id": str(request.id),
+        "token": raw_token,
+        "url": f"{get_settings().patient_web_base_url.rstrip('/')}/c/{raw_token}",
+    }
 
 
 @router.get("/requests", response_model=list[ConsentRequestRead])
@@ -293,7 +300,11 @@ async def resend_consent_request(
         metadata={"original_request_id": str(request_id)},
     )
     await session.commit()
-    return {"consent_request_id": str(new_request.id), "token": raw_token}
+    return {
+        "consent_request_id": str(new_request.id),
+        "token": raw_token,
+        "url": f"{get_settings().patient_web_base_url.rstrip('/')}/c/{raw_token}",
+    }
 
 
 @public_router.get("/{token}", response_model=ConsentFormRead)
@@ -347,7 +358,7 @@ async def get_document(
     dependencies=[Depends(require_roles(*_DOCUMENT_READ_ROLES))],
 )
 async def download_document(
-    document_id: uuid.UUID, user: AuthenticatedUser, session: DbSession
+    document_id: uuid.UUID, user: AuthenticatedUser, session: DbSession, request: Request
 ) -> DocumentDownloadRead:
     service = DocumentService(ConsentRepository(session), session)
     url, expires_in = await service.get_download_url(user.organization_id, document_id)
@@ -359,6 +370,8 @@ async def download_document(
         resource_id=str(document_id),
     )
     await session.commit()
+    if url.startswith("/"):
+        url = f"{str(request.base_url).rstrip('/')}{url}"
     return DocumentDownloadRead(url=url, expires_in=expires_in)
 
 
@@ -413,7 +426,7 @@ async def invalidate_document(
 
 @documents_router.post(
     "/{document_id}/regenerate",
-    status_code=202,
+    status_code=200,
     dependencies=[Depends(require_roles(*_DOCUMENT_ADMIN_ROLES))],
 )
 async def regenerate_document(
@@ -435,4 +448,22 @@ async def regenerate_document(
         metadata={"reason": payload.reason},
     )
     await session.commit()
-    return {"status": "regeneration_requested"}
+    return {"status": "regenerated"}
+
+
+@documents_router.get("/content/{token}", include_in_schema=False)
+async def download_signed_content(token: str) -> Response:
+    try:
+        key = resolve_download_token(token)
+        content = await run_in_threadpool(download_bytes, key)
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(404, "Invalid or expired download link") from exc
+    return Response(
+        content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": 'attachment; filename="consentimiento.pdf"',
+            "Cache-Control": "private, no-store",
+            "Referrer-Policy": "no-referrer",
+        },
+    )

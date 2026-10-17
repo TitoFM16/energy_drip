@@ -4,6 +4,7 @@ from datetime import date, datetime
 from fastapi import APIRouter, Depends, Query
 
 from medical_api.api.dependencies import AuthenticatedUser, DbSession
+from medical_api.core.exceptions import NotFoundError
 from medical_api.core.security import require_roles
 from medical_api.modules.audit.service import AuditService
 from medical_api.modules.identity.repository import UserRepository
@@ -44,7 +45,9 @@ async def list_appointments(
     user: AuthenticatedUser, session: DbSession, start: datetime, end: datetime
 ) -> list[AppointmentRead]:
     repository = AppointmentRepository(session)
-    return await repository.list_for_range(user.organization_id, start, end)
+    service = AppointmentService(repository, session)
+    appointments = await repository.list_for_range(user.organization_id, start, end)
+    return [await service.to_read(appointment) for appointment in appointments]
 
 
 @router.post(
@@ -69,10 +72,16 @@ async def create_appointment(
         metadata={"patient_id": str(appointment.patient_id)},
     )
     await session.commit()
-    return appointment
+    return await service.to_read(appointment)
 
 
-@router.post("/{appointment_id}/status", response_model=AppointmentRead)
+@router.post(
+    "/{appointment_id}/status",
+    response_model=AppointmentRead,
+    dependencies=[
+        Depends(require_roles("receptionist", "assistant", "practitioner", "organization_admin"))
+    ],
+)
 async def update_appointment_status(
     appointment_id: uuid.UUID,
     payload: AppointmentStatusUpdate,
@@ -96,7 +105,7 @@ async def update_appointment_status(
         metadata={"status": str(payload.status), "reason": payload.reason},
     )
     await session.commit()
-    return appointment
+    return await service.to_read(appointment)
 
 
 @router.patch(
@@ -137,7 +146,7 @@ async def reschedule_appointment(
         },
     )
     await session.commit()
-    return appointment
+    return await service.to_read(appointment)
 
 
 @router.get("/{appointment_id}/status-history", response_model=list[AppointmentStatusHistoryRead])
@@ -160,6 +169,11 @@ async def get_available_slots(
     # missing_features.md's "Appointment management" for the full writeup.
     duration_minutes: int = Query(30, ge=5, le=480),
 ) -> list[AvailableSlot]:
+    practitioner = await PractitionerRepository(session).get(user.organization_id, practitioner_id)
+    if practitioner is None:
+        raise NotFoundError("Practitioner", practitioner_id)
+    if not practitioner.is_active:
+        return []
     service = AvailabilityService(AvailabilityRepository(session), AppointmentRepository(session))
     return await service.compute_slots(
         user.organization_id, practitioner_id, date_from, date_to, duration_minutes

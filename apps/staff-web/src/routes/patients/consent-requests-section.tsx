@@ -1,4 +1,4 @@
-import { Badge, Button, Callout, ErrorText } from '@medical-platform/ui';
+import { Badge, Button, ErrorText } from '@medical-platform/ui';
 import { useState } from 'react';
 import { useConsentTemplates } from '../../features/consents/use-consent-templates';
 import {
@@ -34,17 +34,26 @@ export function ConsentRequestsSection({ patientId }: ConsentRequestsSectionProp
   async function handleCreate(event: React.FormEvent) {
     event.preventDefault();
     if (!selectedVersionId) return;
-    await createRequest.mutateAsync({
-      patient_id: patientId,
-      template_version_id: selectedVersionId,
-    });
+    try {
+      resendRequest.reset();
+      await createRequest.mutateAsync({
+        patient_id: patientId,
+        template_version_id: selectedVersionId,
+      });
+    } catch {
+      /* Error is shown below. */
+    }
   }
 
   async function handleConfirmRevoke(requestId: string) {
     if (!revokeReason.trim()) return;
-    await invalidateRequest.mutateAsync({ requestId, reason: revokeReason.trim() });
-    setRevokingId(null);
-    setRevokeReason('');
+    try {
+      await invalidateRequest.mutateAsync({ requestId, reason: revokeReason.trim() });
+      setRevokingId(null);
+      setRevokeReason('');
+    } catch {
+      /* Error is shown below. */
+    }
   }
 
   return (
@@ -77,10 +86,13 @@ export function ConsentRequestsSection({ patientId }: ConsentRequestsSectionProp
                     <button
                       type="button"
                       disabled={resendRequest.isPending}
-                      onClick={() => resendRequest.mutate(request.id)}
+                      onClick={() => {
+                        createRequest.reset();
+                        resendRequest.mutate(request.id);
+                      }}
                       className="text-xs text-slate-500 underline disabled:opacity-40"
                     >
-                      Reenviar
+                      Crear nuevo enlace
                     </button>
                   )}
                 </div>
@@ -123,16 +135,10 @@ export function ConsentRequestsSection({ patientId }: ConsentRequestsSectionProp
         <ErrorText className="mb-3">No se pudo revocar la solicitud.</ErrorText>
       )}
       {resendRequest.isError && (
-        <ErrorText className="mb-3">No se pudo reenviar la solicitud.</ErrorText>
+        <ErrorText className="mb-3">No se pudo crear el nuevo enlace.</ErrorText>
       )}
       {resendRequest.data && (
-        <Callout variant="warning" className="mb-3 text-xs">
-          Solo en desarrollo — nuevo enlace de consentimiento:{' '}
-          <code className="break-all rounded bg-amber-100 px-1">
-            http://localhost:5174/c/{resendRequest.data.token}
-          </code>{' '}
-          (en producción se envía por WhatsApp, no se muestra aquí).
-        </Callout>
+        <ConsentLink key={resendRequest.data.url} url={resendRequest.data.url} />
       )}
 
       <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
@@ -152,7 +158,7 @@ export function ConsentRequestsSection({ patientId }: ConsentRequestsSectionProp
           </select>
         </label>
         <Button type="submit" disabled={!selectedVersionId || createRequest.isPending}>
-          {createRequest.isPending ? 'Enviando...' : 'Solicitar consentimiento'}
+          {createRequest.isPending ? 'Creando…' : 'Crear enlace de consentimiento'}
         </Button>
       </form>
       {publishedTemplates.length === 0 && (
@@ -164,14 +170,50 @@ export function ConsentRequestsSection({ patientId }: ConsentRequestsSectionProp
         <ErrorText className="mt-2">No se pudo crear la solicitud.</ErrorText>
       )}
       {createRequest.data && (
-        <Callout variant="warning" className="mt-3 text-xs">
-          Solo en desarrollo — enlace de consentimiento:{' '}
-          <code className="break-all rounded bg-amber-100 px-1">
-            http://localhost:5174/c/{createRequest.data.token}
-          </code>{' '}
-          (en producción se envía por WhatsApp, no se muestra aquí).
-        </Callout>
+        <ConsentLink key={createRequest.data.url} url={createRequest.data.url} />
       )}
     </section>
+  );
+}
+
+function ConsentLink({ url }: { url: string }) {
+  const [message, setMessage] = useState('');
+  return (
+    <div className="my-4 rounded-lg border border-green-200 bg-green-50 p-4">
+      <p className="mb-2 text-sm font-medium text-green-900">Enlace privado para el paciente</p>
+      <p className="mb-3 text-sm text-green-800">
+        Copia y comparte este enlace directamente con el paciente. Al crear un nuevo enlace, el
+        anterior deja de funcionar.
+      </p>
+      <label className="block text-sm text-green-900">
+        Enlace de consentimiento
+        <input
+          aria-label="Enlace de consentimiento"
+          className="mt-1 w-full rounded-lg border border-green-300 bg-white px-3 py-2 text-sm"
+          readOnly
+          value={url}
+          onFocus={(event) => event.target.select()}
+        />
+      </label>
+      <button
+        type="button"
+        className="mt-3 rounded-lg bg-green-900 px-3 py-2 text-sm text-white"
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(url);
+            setMessage('Enlace copiado.');
+          } catch {
+            setMessage('Selecciona el enlace y cópialo manualmente.');
+          }
+        }}
+      >
+        Copiar enlace
+      </button>
+      {message && (
+        <p role="status" className="mt-2 text-sm text-green-900">
+          {message}
+        </p>
+      )}
+    </div>
   );
 }

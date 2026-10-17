@@ -20,12 +20,14 @@ class TreatmentDefinitionRepository:
         return definition
 
     async def get(
-        self, organization_id: uuid.UUID, definition_id: uuid.UUID
+        self, organization_id: uuid.UUID, definition_id: uuid.UUID, *, for_update: bool = False
     ) -> TreatmentDefinition | None:
         stmt = select(TreatmentDefinition).where(
             TreatmentDefinition.organization_id == organization_id,
             TreatmentDefinition.id == definition_id,
         )
+        if for_update:
+            stmt = stmt.with_for_update().execution_options(populate_existing=True)
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
     async def list_all(

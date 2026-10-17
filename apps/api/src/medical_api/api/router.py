@@ -13,6 +13,7 @@ from medical_api.api.v1 import (
     webhooks,
 )
 from medical_api.modules.audit.router import router as audit_router
+from medical_api.modules.treatments.images import router as images_router
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -22,6 +23,7 @@ api_router.include_router(patients.clinical_router, prefix="/patients", tags=["c
 api_router.include_router(appointments.router, prefix="/appointments", tags=["appointments"])
 api_router.include_router(practitioners.router, prefix="/practitioners", tags=["practitioners"])
 api_router.include_router(treatments.router, prefix="/treatments", tags=["treatments"])
+api_router.include_router(images_router, prefix="/treatments", tags=["treatments"])
 api_router.include_router(consents.router, prefix="/consents", tags=["consents"])
 api_router.include_router(consents.documents_router, prefix="/documents", tags=["documents"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])

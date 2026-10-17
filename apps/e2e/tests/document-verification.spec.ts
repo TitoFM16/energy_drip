@@ -26,7 +26,7 @@ test('staff downloads, verifies, regenerates, and invalidates a signed consent d
   await page.getByLabel('Correo electrónico').fill(clinic.adminEmail);
   await page.getByLabel('Contraseña').fill(clinic.adminPassword);
   await page.getByRole('button', { name: 'Entrar' }).click();
-  await expect(page).toHaveURL(`${STAFF_WEB_URL}/`);
+  await expect(page).toHaveURL(`${STAFF_WEB_URL}/agenda`);
 
   await page.goto(`${STAFF_WEB_URL}/consents`);
   await page
@@ -46,19 +46,18 @@ test('staff downloads, verifies, regenerates, and invalidates a signed consent d
     .getByRole('heading', { name: 'Documento firmado' })
     .locator('xpath=following-sibling::ul[1]');
 
-  // PDF generation happens asynchronously in the worker off the
-  // consent.submitted event (see missing_features.md's "Document version
-  // history and regeneration") — the detail panel doesn't poll, so reload
-  // and reselect until the document actually shows up rather than racing
-  // a fixed sleep.
+  // PDF generation completes inside the submission request; no worker is needed.
   const version1Row = documentSection.locator('li', { hasText: 'Versión 1' });
-  await expect(async () => {
-    await page.reload();
-    await page
-      .getByRole('button', { name: new RegExp(`${patient.first_name} ${patient.last_name}`) })
-      .click();
-    await expect(version1Row).toBeVisible({ timeout: 2_000 });
-  }).toPass({ timeout: 20_000 });
+  await expect(version1Row).toBeVisible();
+  await version1Row.getByRole('button', { name: 'Preparar descarga', exact: true }).click();
+  const pdfLink = version1Row.getByRole('link', { name: 'Abrir PDF firmado', exact: true });
+  await expect(pdfLink).toBeVisible();
+  const signedUrl = await pdfLink.getAttribute('href');
+  expect(signedUrl).toBeTruthy();
+  const pdfResponse = await page.request.get(signedUrl!);
+  expect(pdfResponse.ok()).toBeTruthy();
+  expect(pdfResponse.headers()['content-type']).toContain('application/pdf');
+  expect((await pdfResponse.body()).subarray(0, 4).toString()).toBe('%PDF');
 
   await expect(version1Row.getByText('Vigente')).toBeVisible();
 
@@ -72,7 +71,7 @@ test('staff downloads, verifies, regenerates, and invalidates a signed consent d
   await version1Row.getByRole('button', { name: 'Regenerar' }).click();
   await version1Row.getByPlaceholder('Motivo').fill('E2E regeneration test');
   await version1Row.getByRole('button', { name: 'Confirmar regeneración' }).click();
-  await expect(version1Row.getByText('Regeneración solicitada')).toBeVisible();
+  await expect(version1Row.getByText('Documento regenerado.', { exact: false })).toBeVisible();
 
   const version2Row = documentSection.locator('li', { hasText: 'Versión 2' });
   await expect(async () => {

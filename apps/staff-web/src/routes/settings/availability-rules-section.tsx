@@ -28,12 +28,16 @@ export function AvailabilityRulesSection() {
   async function handleCreate(event: React.FormEvent) {
     event.preventDefault();
     if (!practitionerId) return;
-    await createRule.mutateAsync({
-      practitioner_id: practitionerId,
-      weekday: Number(weekday),
-      start_time: startTime,
-      end_time: endTime,
-    });
+    try {
+      await createRule.mutateAsync({
+        practitioner_id: practitionerId,
+        weekday: Number(weekday),
+        start_time: startTime,
+        end_time: endTime,
+      });
+    } catch {
+      /* Error is shown below. */
+    }
   }
 
   return (
@@ -42,6 +46,13 @@ export function AvailabilityRulesSection() {
         Horarios de disponibilidad
       </h2>
 
+      <p className="mb-4 text-sm text-slate-600">
+        Estos horarios se repiten cada semana, en hora de Colombia (UTC−5). Agrega dos franjas para
+        dejar una pausa entre ellas. La duración de cada servicio define los turnos disponibles.
+      </p>
+      {deleteRule.isError && (
+        <ErrorText className="mb-3">No se pudo eliminar el horario.</ErrorText>
+      )}
       <label className="mb-4 flex flex-col gap-1 text-sm font-medium text-slate-700">
         Profesional
         <select
@@ -106,6 +117,7 @@ export function AvailabilityRulesSection() {
               Desde
               <input
                 type="time"
+                required
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
                 className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
@@ -115,6 +127,7 @@ export function AvailabilityRulesSection() {
               Hasta
               <input
                 type="time"
+                required
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
                 className="rounded-lg border border-slate-300 px-3 py-2 text-sm"

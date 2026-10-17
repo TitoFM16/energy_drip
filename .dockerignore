@@ -11,3 +11,8 @@
 **/.ruff_cache
 services/postgres/data
 services/storage/data
+
+.env.production
+**/data/private
+**/data/media
+backups

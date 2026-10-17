@@ -19,7 +19,7 @@ test('practitioner creates a treatment plan, records a session, and finalizes it
   await page.getByLabel('Correo electrónico').fill(clinic.practitionerEmail);
   await page.getByLabel('Contraseña').fill(clinic.practitionerPassword);
   await page.getByRole('button', { name: 'Entrar' }).click();
-  await expect(page).toHaveURL(`${STAFF_WEB_URL}/`);
+  await expect(page).toHaveURL(`${STAFF_WEB_URL}/agenda`);
 
   await page.goto(`${STAFF_WEB_URL}/patients/${patient.id}`);
   await expect(page.getByRole('heading', { name: 'Laura Mendoza' })).toBeVisible();

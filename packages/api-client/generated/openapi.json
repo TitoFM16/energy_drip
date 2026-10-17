@@ -252,10 +252,43 @@
             "title": "Patient Id",
             "type": "string"
           },
+          "patient_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Patient Name"
+          },
+          "patient_phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Patient Phone"
+          },
           "practitioner_id": {
             "format": "uuid",
             "title": "Practitioner Id",
             "type": "string"
+          },
+          "practitioner_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Practitioner Name"
           },
           "room_id": {
             "anyOf": [
@@ -276,6 +309,29 @@
           },
           "status": {
             "$ref": "#/components/schemas/AppointmentStatus"
+          },
+          "treatment_definition_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Treatment Definition Id"
+          },
+          "treatment_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Treatment Name"
           }
         },
         "required": [
@@ -558,6 +614,20 @@
           "ends_at"
         ],
         "title": "AvailableSlot",
+        "type": "object"
+      },
+      "Body_upload_service_image_api_v1_treatments_definitions__definition_id__image_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_service_image_api_v1_treatments_definitions__definition_id__image_post",
         "type": "object"
       },
       "BookingRequestConfirmation": {
@@ -2930,9 +3000,23 @@
       },
       "PractitionerCreate": {
         "properties": {
+          "full_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
           "specialty": {
             "anyOf": [
               {
+                "maxLength": 150,
                 "type": "string"
               },
               {
@@ -2942,14 +3026,18 @@
             "title": "Specialty"
           },
           "user_id": {
-            "format": "uuid",
-            "title": "User Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
           }
         },
-        "required": [
-          "user_id"
-        ],
         "title": "PractitionerCreate",
         "type": "object"
       },
@@ -3008,6 +3096,19 @@
       },
       "PractitionerUpdate": {
         "properties": {
+          "full_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
           "is_active": {
             "anyOf": [
               {
@@ -3022,6 +3123,7 @@
           "specialty": {
             "anyOf": [
               {
+                "maxLength": 150,
                 "type": "string"
               },
               {
@@ -3034,8 +3136,167 @@
         "title": "PractitionerUpdate",
         "type": "object"
       },
+      "PublicAppointmentConfirmation": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "ends_at": {
+            "format": "date-time",
+            "title": "Ends At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "practitioner_name": {
+            "title": "Practitioner Name",
+            "type": "string"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "treatment_name": {
+            "title": "Treatment Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "starts_at",
+          "ends_at",
+          "status",
+          "treatment_name",
+          "practitioner_name",
+          "detail"
+        ],
+        "title": "PublicAppointmentConfirmation",
+        "type": "object"
+      },
+      "PublicAppointmentCreate": {
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "format": "email",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "first_name": {
+            "maxLength": 150,
+            "minLength": 1,
+            "title": "First Name",
+            "type": "string"
+          },
+          "last_name": {
+            "maxLength": 150,
+            "minLength": 1,
+            "title": "Last Name",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "phone_number": {
+            "maxLength": 30,
+            "minLength": 5,
+            "pattern": "^[+0-9() .-]+$",
+            "title": "Phone Number",
+            "type": "string"
+          },
+          "practitioner_id": {
+            "format": "uuid",
+            "title": "Practitioner Id",
+            "type": "string"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          },
+          "treatment_definition_id": {
+            "format": "uuid",
+            "title": "Treatment Definition Id",
+            "type": "string"
+          },
+          "website": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Website",
+            "type": "string"
+          }
+        },
+        "required": [
+          "treatment_definition_id",
+          "practitioner_id",
+          "starts_at",
+          "first_name",
+          "last_name",
+          "phone_number"
+        ],
+        "title": "PublicAppointmentCreate",
+        "type": "object"
+      },
+      "PublicPractitionerRead": {
+        "properties": {
+          "full_name": {
+            "title": "Full Name",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "specialty": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Specialty"
+          }
+        },
+        "required": [
+          "id",
+          "full_name",
+          "specialty"
+        ],
+        "title": "PublicPractitionerRead",
+        "type": "object"
+      },
       "PublicTreatmentRead": {
         "properties": {
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
           "description": {
             "anyOf": [
               {
@@ -3047,20 +3308,44 @@
             ],
             "title": "Description"
           },
+          "duration_minutes": {
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
             "type": "string"
           },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
           "name": {
             "title": "Name",
+            "type": "string"
+          },
+          "price": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Price",
             "type": "string"
           }
         },
         "required": [
           "id",
           "name",
-          "description"
+          "description",
+          "price",
+          "currency",
+          "duration_minutes",
+          "image_url"
         ],
         "title": "PublicTreatmentRead",
         "type": "object"
@@ -3189,14 +3474,22 @@
       },
       "TreatmentDefinitionCreate": {
         "properties": {
+          "currency": {
+            "default": "COP",
+            "pattern": "^[A-Z]{3}$",
+            "title": "Currency",
+            "type": "string"
+          },
           "default_session_count": {
             "default": 1,
+            "minimum": 1.0,
             "title": "Default Session Count",
             "type": "integer"
           },
           "description": {
             "anyOf": [
               {
+                "maxLength": 5000,
                 "type": "string"
               },
               {
@@ -3205,9 +3498,49 @@
             ],
             "title": "Description"
           },
+          "duration_minutes": {
+            "default": 60,
+            "maximum": 480.0,
+            "minimum": 5.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "is_active": {
+            "default": true,
+            "title": "Is Active",
+            "type": "boolean"
+          },
           "name": {
+            "maxLength": 150,
+            "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,10}|(?=[\\d.]{1,13}0*$)\\d{0,10}\\.\\d{0,2}0*$)",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Price"
           }
         },
         "required": [
@@ -3218,6 +3551,10 @@
       },
       "TreatmentDefinitionRead": {
         "properties": {
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
           "default_session_count": {
             "title": "Default Session Count",
             "type": "integer"
@@ -3233,10 +3570,25 @@
             ],
             "title": "Description"
           },
+          "duration_minutes": {
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
           },
           "is_active": {
             "title": "Is Active",
@@ -3245,6 +3597,11 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "price": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Price",
+            "type": "string"
           }
         },
         "required": [
@@ -3252,6 +3609,10 @@
           "name",
           "description",
           "default_session_count",
+          "price",
+          "currency",
+          "duration_minutes",
+          "image_url",
           "is_active"
         ],
         "title": "TreatmentDefinitionRead",
@@ -3259,9 +3620,22 @@
       },
       "TreatmentDefinitionUpdate": {
         "properties": {
+          "currency": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Z]{3}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
           "default_session_count": {
             "anyOf": [
               {
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -3273,6 +3647,7 @@
           "description": {
             "anyOf": [
               {
+                "maxLength": 5000,
                 "type": "string"
               },
               {
@@ -3280,6 +3655,31 @@
               }
             ],
             "title": "Description"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "maximum": 480.0,
+                "minimum": 5.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
           },
           "is_active": {
             "anyOf": [
@@ -3295,6 +3695,8 @@
           "name": {
             "anyOf": [
               {
+                "maxLength": 150,
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -3302,6 +3704,22 @@
               }
             ],
             "title": "Name"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,10}|(?=[\\d.]{1,13}0*$)\\d{0,10}\\.\\d{0,2}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
           }
         },
         "title": "TreatmentDefinitionUpdate",
@@ -5462,7 +5880,7 @@
           "required": true
         },
         "responses": {
-          "202": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
@@ -7238,6 +7656,126 @@
         ]
       }
     },
+    "/api/v1/public/appointments": {
+      "post": {
+        "operationId": "create_public_appointment_api_v1_public_appointments_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicAppointmentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicAppointmentConfirmation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Public Appointment",
+        "tags": [
+          "public",
+          "public-booking"
+        ]
+      }
+    },
+    "/api/v1/public/availability": {
+      "get": {
+        "operationId": "list_public_availability_api_v1_public_availability_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "practitioner_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Practitioner Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "treatment_definition_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treatment Definition Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_from",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Date From",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_to",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Date To",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AvailableSlot"
+                  },
+                  "title": "Response List Public Availability Api V1 Public Availability Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Public Availability",
+        "tags": [
+          "public",
+          "public-booking"
+        ]
+      }
+    },
     "/api/v1/public/booking-requests": {
       "post": {
         "operationId": "create_booking_request_api_v1_public_booking_requests_post",
@@ -7376,9 +7914,35 @@
         ]
       }
     },
+    "/api/v1/public/practitioners": {
+      "get": {
+        "operationId": "list_public_practitioners_api_v1_public_practitioners_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PublicPractitionerRead"
+                  },
+                  "title": "Response List Public Practitioners Api V1 Public Practitioners Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Public Practitioners",
+        "tags": [
+          "public",
+          "public-booking"
+        ]
+      }
+    },
     "/api/v1/public/treatments": {
       "get": {
-        "description": "Only what's safe for an anonymous visitor: active treatment names\nand descriptions. No pricing, session counts, or anything else\ninternal \u2014 see \"Connected public booking experience\" in\nmissing_features.md.",
+        "description": "Published services, including the price and image managed by the owner.",
         "operationId": "list_public_treatments_api_v1_public_treatments_get",
         "responses": {
           "200": {
@@ -7552,6 +8116,64 @@
           }
         ],
         "summary": "Update Treatment Definition",
+        "tags": [
+          "treatments"
+        ]
+      }
+    },
+    "/api/v1/treatments/definitions/{definition_id}/image": {
+      "post": {
+        "operationId": "upload_service_image_api_v1_treatments_definitions__definition_id__image_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "definition_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Definition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_service_image_api_v1_treatments_definitions__definition_id__image_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TreatmentDefinitionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Upload Service Image",
         "tags": [
           "treatments"
         ]
@@ -8014,7 +8636,7 @@
     },
     "/health/ready": {
       "get": {
-        "description": "Dependency-aware readiness \u2014 for load balancer / orchestrator\nrouting decisions (\"should traffic go to this instance right now\"),\nnot for triggering restarts. Checks the two hard dependencies every\nrequest potentially needs: Postgres and Redis (the latter for\nrate-limiting the public booking endpoint).",
+        "description": "Dependency-aware readiness \u2014 for load balancer / orchestrator\nrouting decisions (\"should traffic go to this instance right now\"),\nnot for triggering restarts. Checks Postgres, the only shared runtime dependency.",
         "operationId": "readiness_check_health_ready_get",
         "responses": {
           "200": {

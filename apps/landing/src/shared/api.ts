@@ -23,3 +23,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   }
   return response.json() as Promise<T>;
 }
+
+export function mediaUrl(path: string): string {
+  return path.startsWith('/') ? `${API_BASE_URL}${path}` : path;
+}

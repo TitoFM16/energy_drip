@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from medical_api.core.database import (
@@ -21,9 +22,17 @@ class TreatmentPlanStatus(StrEnum):
 
 class TreatmentDefinition(Base, UUIDPrimaryKeyMixin, TimestampMixin, OrganizationScopedMixin):
     __tablename__ = "treatment_definitions"
+    __table_args__ = (
+        CheckConstraint("price >= 0", name="ck_service_price_nonnegative"),
+        CheckConstraint("duration_minutes BETWEEN 5 AND 480", name="ck_service_duration"),
+    )
 
     name: Mapped[str] = mapped_column(String(150))
     description: Mapped[str | None]
+    price: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
+    currency: Mapped[str] = mapped_column(String(3), default="COP")
+    duration_minutes: Mapped[int] = mapped_column(default=60)
+    image_url: Mapped[str | None] = mapped_column(String(2048))
     default_session_count: Mapped[int] = mapped_column(default=1)
     is_active: Mapped[bool] = mapped_column(default=True)
 

@@ -1,3 +1,6 @@
+> Historical broader-product notes. The current MVP runs without WhatsApp, Redis, workers, or paid storage.
+> Follow [the VPS runbook](deploy-vps.md) for the supported deployment; the items below are not MVP launch gates.
+
 # WhatsApp production setup (operator runbook)
 
 The code side of WhatsApp is done — see "Notification automation" and

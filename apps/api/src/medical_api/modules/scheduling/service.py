@@ -1,11 +1,14 @@
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from medical_api.core.config import get_settings
 from medical_api.core.exceptions import ConflictError, NotFoundError
+from medical_api.core.security import hash_password
+from medical_api.modules.identity.models import User
 from medical_api.modules.identity.repository import UserRepository
-from medical_api.modules.notifications.service import enqueue_event
 from medical_api.modules.patients.repository import PatientRepository
 from medical_api.modules.scheduling.models import (
     Appointment,
@@ -22,6 +25,7 @@ from medical_api.modules.scheduling.repository import (
 )
 from medical_api.modules.scheduling.schemas import (
     AppointmentCreate,
+    AppointmentRead,
     AppointmentStatusHistoryRead,
     AvailabilityRuleCreate,
     AvailableSlot,
@@ -29,6 +33,7 @@ from medical_api.modules.scheduling.schemas import (
     PractitionerRead,
     PractitionerUpdate,
 )
+from medical_api.modules.treatments.repository import TreatmentDefinitionRepository
 
 MAX_AVAILABILITY_WINDOW_DAYS = 31
 
@@ -44,6 +49,7 @@ class AppointmentService:
         availability: AvailabilityRepository | None = None,
         rooms: RoomRepository | None = None,
         users: UserRepository | None = None,
+        timezone: str | None = None,
     ):
         self.repository = repository
         self.session = session
@@ -52,6 +58,8 @@ class AppointmentService:
         self.availability = availability or AvailabilityRepository(session)
         self.rooms = rooms or RoomRepository(session)
         self.users = users or UserRepository(session)
+        self.timezone = ZoneInfo(timezone or get_settings().clinic_timezone)
+        self.treatments = TreatmentDefinitionRepository(session)
 
     async def schedule(
         self,
@@ -60,13 +68,16 @@ class AppointmentService:
         *,
         actor_user_id: uuid.UUID | None = None,
     ) -> Appointment:
-        # The raw API never trusted that patient_id/practitioner_id/room_id
-        # actually belong to the caller's organization before this — a
-        # cross-tenant ID would previously have been accepted silently.
+        await self.repository.lock_resources(data.practitioner_id, data.room_id)
+        self._check_future_range(data.starts_at, data.ends_at)
         if await self.patients.get(organization_id, data.patient_id) is None:
             raise NotFoundError("Patient", data.patient_id)
-        if await self.practitioners.get(organization_id, data.practitioner_id) is None:
+        practitioner = await self.practitioners.get(organization_id, data.practitioner_id)
+        if practitioner is None or not practitioner.is_active:
             raise NotFoundError("Practitioner", data.practitioner_id)
+        await self._check_service(
+            organization_id, data.treatment_definition_id, data.starts_at, data.ends_at
+        )
         if data.room_id is not None and await self.rooms.get(organization_id, data.room_id) is None:
             raise NotFoundError("Room", data.room_id)
 
@@ -91,18 +102,6 @@ class AppointmentService:
                 changed_by_user_id=actor_user_id,
             )
         )
-        # Same transaction as the appointment write: outbox guarantees the
-        # worker eventually sends confirmation + consent link even if the
-        # notification provider is down right now.
-        await enqueue_event(
-            self.session,
-            organization_id=organization_id,
-            event_type="appointment.scheduled",
-            payload={
-                "appointment_id": str(appointment.id),
-                "patient_id": str(appointment.patient_id),
-            },
-        )
         return appointment
 
     async def _check_within_availability(
@@ -112,19 +111,17 @@ class AppointmentService:
         starts_at: datetime,
         ends_at: datetime,
     ) -> None:
-        # The UI only ever offers slots computed from these same rules, but
-        # the raw API previously enforced nothing here — a direct POST could
-        # book a practitioner at 3am on a day with no rule at all. Same
-        # rule-times-as-UTC-directly interpretation as
-        # AvailabilityService.compute_slots (see its docstring).
         rules = await self.availability.list_rules(organization_id, practitioner_id)
-        weekday = starts_at.weekday()
+        local_start = starts_at.astimezone(self.timezone)
+        weekday = local_start.weekday()
         for rule in rules:
             if rule.weekday != weekday:
                 continue
-            rule_start = datetime.combine(starts_at.date(), rule.start_time, tzinfo=UTC)
-            rule_end = datetime.combine(starts_at.date(), rule.end_time, tzinfo=UTC)
-            if rule_start <= starts_at and ends_at <= rule_end:
+            rule_start = datetime.combine(local_start.date(), rule.start_time, tzinfo=self.timezone)
+            rule_end = datetime.combine(local_start.date(), rule.end_time, tzinfo=self.timezone)
+            duration = (ends_at - starts_at).total_seconds()
+            offset = (starts_at - rule_start).total_seconds()
+            if rule_start <= starts_at and ends_at <= rule_end and offset % duration == 0:
                 return
         raise ConflictError("Appointment time is outside the practitioner's availability")
 
@@ -140,7 +137,20 @@ class AppointmentService:
         appointment = await self.repository.get(organization_id, appointment_id)
         if appointment is None:
             raise NotFoundError("Appointment", appointment_id)
+        await self.repository.lock_resources(appointment.practitioner_id, appointment.room_id)
+        await self.session.refresh(appointment)
         previous_status = appointment.status
+        if previous_status == new_status:
+            return appointment
+        terminal = {
+            AppointmentStatus.CANCELLED,
+            AppointmentStatus.COMPLETED,
+            AppointmentStatus.NO_SHOW,
+        }
+        if previous_status in terminal:
+            raise ConflictError(
+                "A finished or cancelled appointment cannot change status; create a new booking"
+            )
         appointment.status = new_status
         await self.repository.add_status_history(
             AppointmentStatusHistory(
@@ -151,13 +161,6 @@ class AppointmentService:
                 reason=reason,
             )
         )
-        if new_status == AppointmentStatus.CANCELLED:
-            await enqueue_event(
-                self.session,
-                organization_id=organization_id,
-                event_type="appointment.cancelled",
-                payload={"appointment_id": str(appointment.id)},
-            )
         return appointment
 
     async def reschedule(
@@ -170,6 +173,20 @@ class AppointmentService:
         appointment = await self.repository.get(organization_id, appointment_id)
         if appointment is None:
             raise NotFoundError("Appointment", appointment_id)
+        await self.repository.lock_resources(appointment.practitioner_id, appointment.room_id)
+        await self.session.refresh(appointment)
+        self._check_future_range(starts_at, ends_at)
+        practitioner = await self.practitioners.get(organization_id, appointment.practitioner_id)
+        if practitioner is None or not practitioner.is_active:
+            raise NotFoundError("Practitioner", appointment.practitioner_id)
+        if ends_at - starts_at != appointment.ends_at - appointment.starts_at:
+            raise ConflictError("Rescheduling must preserve the booked appointment duration")
+        if appointment.treatment_definition_id is not None:
+            definition = await self.treatments.get(
+                organization_id, appointment.treatment_definition_id, for_update=True
+            )
+            if definition is None or not definition.is_active:
+                raise NotFoundError("TreatmentDefinition", appointment.treatment_definition_id)
         if appointment.status in (
             AppointmentStatus.CANCELLED,
             AppointmentStatus.COMPLETED,
@@ -192,6 +209,44 @@ class AppointmentService:
         appointment.starts_at = starts_at
         appointment.ends_at = ends_at
         return appointment
+
+    @staticmethod
+    def _check_future_range(starts_at: datetime, ends_at: datetime) -> None:
+        if starts_at.tzinfo is None or ends_at.tzinfo is None:
+            raise ConflictError("Appointment times must include a timezone")
+        if starts_at < datetime.now(UTC) or ends_at <= starts_at:
+            raise ConflictError("Choose a future appointment time with a positive duration")
+
+    async def _check_service(self, organization_id, definition_id, starts_at, ends_at) -> None:
+        if definition_id is None:
+            return
+        definition = await self.treatments.get(organization_id, definition_id, for_update=True)
+        if definition is None or not definition.is_active:
+            raise NotFoundError("TreatmentDefinition", definition_id)
+        if ends_at - starts_at != timedelta(minutes=definition.duration_minutes):
+            raise ConflictError("Appointment duration must match the selected service")
+
+    async def to_read(self, appointment: Appointment) -> AppointmentRead:
+        patient = await self.patients.get(appointment.organization_id, appointment.patient_id)
+        practitioner = await self.practitioners.get(
+            appointment.organization_id, appointment.practitioner_id
+        )
+        worker = await self.users.get_by_id(practitioner.user_id) if practitioner else None
+        treatment = (
+            await self.treatments.get(
+                appointment.organization_id, appointment.treatment_definition_id
+            )
+            if appointment.treatment_definition_id
+            else None
+        )
+        return AppointmentRead.model_validate(appointment).model_copy(
+            update={
+                "patient_name": f"{patient.first_name} {patient.last_name}" if patient else None,
+                "patient_phone": patient.phone_number if patient else None,
+                "practitioner_name": worker.full_name if worker else None,
+                "treatment_name": treatment.name if treatment else None,
+            }
+        )
 
     async def get_status_history(
         self, organization_id: uuid.UUID, appointment_id: uuid.UUID
@@ -229,22 +284,36 @@ class AppointmentService:
 
 
 class AvailabilityService:
-    """Computes bookable slots from a practitioner's recurring weekly rules
-    minus their existing appointments.
+    """Weekly rules use clinic local time; appointment timestamps carry UTC offsets."""
 
-    MVP simplification: rule `start_time`/`end_time` are interpreted as UTC
-    directly rather than converted from a location's local timezone — fine
-    for a single-timezone clinic, but multi-location deployments spanning
-    timezones will need that conversion added here.
-    """
-
-    def __init__(self, repository: AvailabilityRepository, appointments: AppointmentRepository):
+    def __init__(
+        self,
+        repository: AvailabilityRepository,
+        appointments: AppointmentRepository,
+        *,
+        timezone: str | None = None,
+    ):
         self.repository = repository
         self.appointments = appointments
+        self.timezone = ZoneInfo(timezone or get_settings().clinic_timezone)
 
     async def create_rule(
         self, organization_id: uuid.UUID, data: AvailabilityRuleCreate
     ) -> AvailabilityRule:
+        await self.appointments.lock_resources(data.practitioner_id)
+        practitioner = await PractitionerRepository(self.repository.session).get(
+            organization_id, data.practitioner_id
+        )
+        if practitioner is None or not practitioner.is_active:
+            raise NotFoundError("Practitioner", data.practitioner_id)
+        rules = await self.repository.list_rules(organization_id, data.practitioner_id)
+        if any(
+            rule.weekday == data.weekday
+            and rule.start_time < data.end_time
+            and rule.end_time > data.start_time
+            for rule in rules
+        ):
+            raise ConflictError("Availability rules cannot overlap")
         rule = AvailabilityRule(organization_id=organization_id, **data.model_dump())
         return await self.repository.create_rule(rule)
 
@@ -257,6 +326,7 @@ class AvailabilityService:
         rule = await self.repository.get_rule(organization_id, rule_id)
         if rule is None:
             raise NotFoundError("AvailabilityRule", rule_id)
+        await self.appointments.lock_resources(rule.practitioner_id)
         await self.repository.delete_rule(rule)
 
     async def compute_slots(
@@ -267,6 +337,8 @@ class AvailabilityService:
         date_to: date,
         duration_minutes: int,
     ) -> list[AvailableSlot]:
+        if duration_minutes < 5 or duration_minutes > 480:
+            raise ConflictError("Duration must be between 5 and 480 minutes")
         if date_to < date_from:
             raise ConflictError("date_to must not be before date_from")
         if (date_to - date_from).days > MAX_AVAILABILITY_WINDOW_DAYS:
@@ -279,8 +351,10 @@ class AvailabilityService:
         if not rules_by_weekday:
             return []
 
-        range_start = datetime.combine(date_from, datetime.min.time(), tzinfo=UTC)
-        range_end = datetime.combine(date_to, datetime.min.time(), tzinfo=UTC) + timedelta(days=1)
+        range_start = datetime.combine(date_from, datetime.min.time(), tzinfo=self.timezone)
+        range_end = datetime.combine(
+            date_to, datetime.min.time(), tzinfo=self.timezone
+        ) + timedelta(days=1)
         busy_periods = [
             (appointment.starts_at, appointment.ends_at)
             for appointment in await self.appointments.list_for_practitioner_range(
@@ -294,15 +368,17 @@ class AvailabilityService:
         current_day = date_from
         while current_day <= date_to:
             for rule in rules_by_weekday.get(current_day.weekday(), []):
-                cursor = datetime.combine(current_day, rule.start_time, tzinfo=UTC)
-                day_end = datetime.combine(current_day, rule.end_time, tzinfo=UTC)
+                cursor = datetime.combine(current_day, rule.start_time, tzinfo=self.timezone)
+                day_end = datetime.combine(current_day, rule.end_time, tzinfo=self.timezone)
                 while cursor + step <= day_end:
                     slot_end = cursor + step
                     if cursor >= now and not _overlaps_any(cursor, slot_end, busy_periods):
                         slots.append(AvailableSlot(starts_at=cursor, ends_at=slot_end))
                     cursor += step
             current_day += timedelta(days=1)
-        return slots
+        return sorted(
+            {slot.starts_at: slot for slot in slots}.values(), key=lambda slot: slot.starts_at
+        )
 
 
 def _overlaps_any(
@@ -339,13 +415,26 @@ class PractitionerService:
     async def create(
         self, organization_id: uuid.UUID, data: PractitionerCreate
     ) -> PractitionerRead:
-        user = await self.users.get_by_id(data.user_id)
-        if user is None or user.organization_id != organization_id:
-            raise NotFoundError("User", data.user_id)
-        if await self.repository.get_by_user_id(organization_id, data.user_id) is not None:
-            raise ConflictError("This user already has a practitioner profile")
-
-        practitioner = Practitioner(organization_id=organization_id, **data.model_dump())
+        if data.user_id is not None:
+            user = await self.users.get_by_id(data.user_id)
+            if user is None or user.organization_id != organization_id:
+                raise NotFoundError("User", data.user_id)
+            if await self.repository.get_by_user_id(organization_id, data.user_id) is not None:
+                raise ConflictError("This user already has a practitioner profile")
+        else:
+            # A worker on the calendar does not need an account, email or password.
+            user = await self.users.create(
+                User(
+                    organization_id=organization_id,
+                    full_name=data.full_name,
+                    email=f"worker-{uuid.uuid4()}@staff.invalid",
+                    hashed_password=hash_password(str(uuid.uuid4())),
+                    is_active=False,
+                )
+            )
+        practitioner = Practitioner(
+            organization_id=organization_id, user_id=user.id, specialty=data.specialty
+        )
         practitioner = await self.repository.create(practitioner)
         return await self._to_read(practitioner)
 
@@ -361,6 +450,12 @@ class PractitionerService:
         practitioner = await self.repository.get(organization_id, practitioner_id)
         if practitioner is None:
             raise NotFoundError("Practitioner", practitioner_id)
+        await AppointmentRepository(self.repository.session).lock_resources(practitioner.id)
+        await self.repository.session.refresh(practitioner)
         for field, value in data.model_dump(exclude_unset=True).items():
-            setattr(practitioner, field, value)
+            if field == "full_name":
+                user = await self.users.get_by_id(practitioner.user_id)
+                user.full_name = value
+            else:
+                setattr(practitioner, field, value)
         return await self._to_read(practitioner)

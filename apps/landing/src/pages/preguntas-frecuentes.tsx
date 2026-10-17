@@ -3,7 +3,8 @@ import { SimplePage } from '../components/page-layout';
 const FAQS = [
   {
     question: '¿Cómo firmo mi consentimiento?',
-    answer: 'Recibes un enlace por WhatsApp antes de tu cita; lo abres y firmas con el dedo.',
+    answer:
+      'El equipo te comparte un enlace privado antes de tu cita; lo abres y firmas desde tu dispositivo.',
   },
   {
     question: '¿Qué pasa si mis respuestas requieren revisión?',

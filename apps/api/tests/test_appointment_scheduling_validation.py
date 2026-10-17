@@ -13,6 +13,7 @@ module's docstring for the full rationale.
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 import pytest_asyncio
@@ -28,15 +29,15 @@ from medical_api.modules.scheduling.models import Location, Room
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
-# A future Monday at 09:00 UTC — inside the 09:00-17:00 Monday rule every
+# A future Monday at 09:00 clinic time — inside the 09:00-17:00 Monday rule every
 # `_setup` clinic below gets, and far enough out that "no past slots"
 # filtering elsewhere in the module never interferes.
 _NEXT_MONDAY = datetime.now(UTC).date() + timedelta(
     days=(7 - datetime.now(UTC).date().weekday()) % 7 or 7
 )
-_IN_WINDOW_START = datetime.combine(_NEXT_MONDAY, datetime.min.time(), tzinfo=UTC) + timedelta(
-    hours=9
-)
+_IN_WINDOW_START = datetime.combine(
+    _NEXT_MONDAY, datetime.min.time(), tzinfo=ZoneInfo("America/Bogota")
+) + timedelta(hours=9)
 
 
 @pytest_asyncio.fixture(loop_scope="session")
@@ -205,10 +206,10 @@ async def test_booking_inside_availability_succeeds(client):
 
 async def test_booking_outside_availability_is_rejected(client):
     ctx = await _setup(client)
-    # 03:00 UTC on the same Monday — outside the 09:00-17:00 rule.
-    outside_start = datetime.combine(_NEXT_MONDAY, datetime.min.time(), tzinfo=UTC) + timedelta(
-        hours=3
-    )
+    # 03:00 clinic time on the same Monday — outside the 09:00-17:00 rule.
+    outside_start = datetime.combine(
+        _NEXT_MONDAY, datetime.min.time(), tzinfo=ZoneInfo("America/Bogota")
+    ) + timedelta(hours=3)
     response = await client.post(
         "/api/v1/appointments",
         json=_appointment_payload(

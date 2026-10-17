@@ -1,3 +1,6 @@
+> Historical broader-product notes. The current MVP runs without WhatsApp, Redis, workers, or paid storage.
+> Follow [the VPS runbook](deploy-vps.md) for the supported deployment; the items below are not MVP launch gates.
+
 # Blocked on your input
 
 A running list of everything in [`missing_features.md`](missing_features.md)

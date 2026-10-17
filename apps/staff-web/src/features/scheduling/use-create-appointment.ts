@@ -5,6 +5,7 @@ import type { Appointment } from './types';
 interface CreateAppointmentInput {
   patient_id: string;
   practitioner_id: string;
+  treatment_definition_id: string;
   starts_at: string;
   ends_at: string;
   notes?: string;

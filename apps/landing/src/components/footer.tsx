@@ -7,14 +7,12 @@ export function Footer() {
       <div className="site-footer__inner">
         <div className="site-footer__brand">
           <BrandMark light />
-          <p>Bienestar personalizado que llega a tu domicilio, hotel o Airbnb en Medellín.</p>
+          <p>Elige tu servicio, profesional y horario en un solo lugar.</p>
         </div>
         <div className="site-footer__nav">
           <p className="eyebrow eyebrow--light">Explora</p>
           <Link to="/servicios">Servicios</Link>
-          <Link to="/tratamientos">Tratamientos</Link>
-          <Link to="/preguntas-frecuentes">Preguntas frecuentes</Link>
-          <Link to="/contacto">Contacto</Link>
+          <Link to="/reservar">Reservar una cita</Link>
         </div>
         <div className="site-footer__nav">
           <p className="eyebrow eyebrow--light">Información</p>

@@ -1094,6 +1094,40 @@ export interface paths {
         patch: operations["update_practitioner_api_v1_practitioners__practitioner_id__patch"];
         trace?: never;
     };
+    "/api/v1/public/appointments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Public Appointment */
+        post: operations["create_public_appointment_api_v1_public_appointments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Public Availability */
+        get: operations["list_public_availability_api_v1_public_availability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/public/booking-requests": {
         parameters: {
             query?: never;
@@ -1145,6 +1179,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/public/practitioners": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Public Practitioners */
+        get: operations["list_public_practitioners_api_v1_public_practitioners_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/public/treatments": {
         parameters: {
             query?: never;
@@ -1154,10 +1205,7 @@ export interface paths {
         };
         /**
          * List Public Treatments
-         * @description Only what's safe for an anonymous visitor: active treatment names
-         *     and descriptions. No pricing, session counts, or anything else
-         *     internal — see "Connected public booking experience" in
-         *     missing_features.md.
+         * @description Published services, including the price and image managed by the owner.
          */
         get: operations["list_public_treatments_api_v1_public_treatments_get"];
         put?: never;
@@ -1201,6 +1249,23 @@ export interface paths {
         head?: never;
         /** Update Treatment Definition */
         patch: operations["update_treatment_definition_api_v1_treatments_definitions__definition_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/treatments/definitions/{definition_id}/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Service Image */
+        post: operations["upload_service_image_api_v1_treatments_definitions__definition_id__image_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/treatments/plans": {
@@ -1360,9 +1425,7 @@ export interface paths {
          * Readiness Check
          * @description Dependency-aware readiness — for load balancer / orchestrator
          *     routing decisions ("should traffic go to this instance right now"),
-         *     not for triggering restarts. Checks the two hard dependencies every
-         *     request potentially needs: Postgres and Redis (the latter for
-         *     rate-limiting the public booking endpoint).
+         *     not for triggering restarts. Checks Postgres, the only shared runtime dependency.
          */
         get: operations["readiness_check_health_ready_get"];
         put?: never;
@@ -1481,11 +1544,17 @@ export interface components {
              * Format: uuid
              */
             patient_id: string;
+            /** Patient Name */
+            patient_name?: string | null;
+            /** Patient Phone */
+            patient_phone?: string | null;
             /**
              * Practitioner Id
              * Format: uuid
              */
             practitioner_id: string;
+            /** Practitioner Name */
+            practitioner_name?: string | null;
             /** Room Id */
             room_id: string | null;
             /**
@@ -1494,6 +1563,10 @@ export interface components {
              */
             starts_at: string;
             status: components["schemas"]["AppointmentStatus"];
+            /** Treatment Definition Id */
+            treatment_definition_id?: string | null;
+            /** Treatment Name */
+            treatment_name?: string | null;
         };
         /** AppointmentReschedule */
         AppointmentReschedule: {
@@ -1621,6 +1694,11 @@ export interface components {
              * Format: date-time
              */
             starts_at: string;
+        };
+        /** Body_upload_service_image_api_v1_treatments_definitions__definition_id__image_post */
+        Body_upload_service_image_api_v1_treatments_definitions__definition_id__image_post: {
+            /** File */
+            file: string;
         };
         /** BookingRequestConfirmation */
         BookingRequestConfirmation: {
@@ -2551,13 +2629,12 @@ export interface components {
         };
         /** PractitionerCreate */
         PractitionerCreate: {
+            /** Full Name */
+            full_name?: string | null;
             /** Specialty */
             specialty?: string | null;
-            /**
-             * User Id
-             * Format: uuid
-             */
-            user_id: string;
+            /** User Id */
+            user_id?: string | null;
         };
         /** PractitionerRead */
         PractitionerRead: {
@@ -2587,22 +2664,103 @@ export interface components {
         };
         /** PractitionerUpdate */
         PractitionerUpdate: {
+            /** Full Name */
+            full_name?: string | null;
             /** Is Active */
             is_active?: boolean | null;
             /** Specialty */
             specialty?: string | null;
         };
-        /** PublicTreatmentRead */
-        PublicTreatmentRead: {
-            /** Description */
-            description: string | null;
+        /** PublicAppointmentConfirmation */
+        PublicAppointmentConfirmation: {
+            /** Detail */
+            detail: string;
+            /**
+             * Ends At
+             * Format: date-time
+             */
+            ends_at: string;
             /**
              * Id
              * Format: uuid
              */
             id: string;
+            /** Practitioner Name */
+            practitioner_name: string;
+            /**
+             * Starts At
+             * Format: date-time
+             */
+            starts_at: string;
+            /** Status */
+            status: string;
+            /** Treatment Name */
+            treatment_name: string;
+        };
+        /** PublicAppointmentCreate */
+        PublicAppointmentCreate: {
+            /** Email */
+            email?: string | null;
+            /** First Name */
+            first_name: string;
+            /** Last Name */
+            last_name: string;
+            /** Message */
+            message?: string | null;
+            /** Phone Number */
+            phone_number: string;
+            /**
+             * Practitioner Id
+             * Format: uuid
+             */
+            practitioner_id: string;
+            /**
+             * Starts At
+             * Format: date-time
+             */
+            starts_at: string;
+            /**
+             * Treatment Definition Id
+             * Format: uuid
+             */
+            treatment_definition_id: string;
+            /**
+             * Website
+             * @default
+             */
+            website: string;
+        };
+        /** PublicPractitionerRead */
+        PublicPractitionerRead: {
+            /** Full Name */
+            full_name: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Specialty */
+            specialty: string | null;
+        };
+        /** PublicTreatmentRead */
+        PublicTreatmentRead: {
+            /** Currency */
+            currency: string;
+            /** Description */
+            description: string | null;
+            /** Duration Minutes */
+            duration_minutes: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Image Url */
+            image_url: string | null;
             /** Name */
             name: string;
+            /** Price */
+            price: string;
         };
         /**
          * QuestionType
@@ -2665,41 +2823,79 @@ export interface components {
         /** TreatmentDefinitionCreate */
         TreatmentDefinitionCreate: {
             /**
+             * Currency
+             * @default COP
+             */
+            currency: string;
+            /**
              * Default Session Count
              * @default 1
              */
             default_session_count: number;
             /** Description */
             description?: string | null;
+            /**
+             * Duration Minutes
+             * @default 60
+             */
+            duration_minutes: number;
+            /** Image Url */
+            image_url?: string | null;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
             /** Name */
             name: string;
+            /**
+             * Price
+             * @default 0
+             */
+            price: number | string;
         };
         /** TreatmentDefinitionRead */
         TreatmentDefinitionRead: {
+            /** Currency */
+            currency: string;
             /** Default Session Count */
             default_session_count: number;
             /** Description */
             description: string | null;
+            /** Duration Minutes */
+            duration_minutes: number;
             /**
              * Id
              * Format: uuid
              */
             id: string;
+            /** Image Url */
+            image_url: string | null;
             /** Is Active */
             is_active: boolean;
             /** Name */
             name: string;
+            /** Price */
+            price: string;
         };
         /** TreatmentDefinitionUpdate */
         TreatmentDefinitionUpdate: {
+            /** Currency */
+            currency?: string | null;
             /** Default Session Count */
             default_session_count?: number | null;
             /** Description */
             description?: string | null;
+            /** Duration Minutes */
+            duration_minutes?: number | null;
+            /** Image Url */
+            image_url?: string | null;
             /** Is Active */
             is_active?: boolean | null;
             /** Name */
             name?: string | null;
+            /** Price */
+            price?: number | string | null;
         };
         /** TreatmentPlanCreate */
         TreatmentPlanCreate: {
@@ -3984,7 +4180,7 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            202: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5125,6 +5321,73 @@ export interface operations {
             };
         };
     };
+    create_public_appointment_api_v1_public_appointments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicAppointmentCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicAppointmentConfirmation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_public_availability_api_v1_public_availability_get: {
+        parameters: {
+            query: {
+                practitioner_id: string;
+                treatment_definition_id: string;
+                date_from: string;
+                date_to: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvailableSlot"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_booking_request_api_v1_public_booking_requests_post: {
         parameters: {
             query?: never;
@@ -5220,6 +5483,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_public_practitioners_api_v1_public_practitioners_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicPractitionerRead"][];
                 };
             };
         };
@@ -5320,6 +5603,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TreatmentDefinitionUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreatmentDefinitionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_service_image_api_v1_treatments_definitions__definition_id__image_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                definition_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_service_image_api_v1_treatments_definitions__definition_id__image_post"];
             };
         };
         responses: {

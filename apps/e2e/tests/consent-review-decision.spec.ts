@@ -24,7 +24,7 @@ test('practitioner records a final decision for a consent requiring review', asy
   await page.getByLabel('Correo electrónico').fill(clinic.practitionerEmail);
   await page.getByLabel('Contraseña').fill(clinic.practitionerPassword);
   await page.getByRole('button', { name: 'Entrar' }).click();
-  await expect(page).toHaveURL(`${STAFF_WEB_URL}/`);
+  await expect(page).toHaveURL(`${STAFF_WEB_URL}/agenda`);
 
   await page.goto(`${STAFF_WEB_URL}/consents`);
   const requestButton = page.locator('button').filter({ hasText: 'Laura Decision' });

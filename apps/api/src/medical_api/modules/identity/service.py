@@ -232,10 +232,10 @@ class AuthService:
         return await self._issue_tokens(user)
 
     async def request_password_reset(self, email: str) -> str | None:
-        """Returns the raw reset token if an active account exists, else
-        None. Callers must respond with the same status/shape either way
-        (only whether `token` is populated differs) so the endpoint doesn't
-        leak account existence.
+        """Issue a reset credential for development or trusted internal callers.
+
+        The public production route must never call this without a private
+        delivery channel; returning a token would grant access to that account.
         """
         user = await self.users.get_by_email_any_org(email)
         if user is None or not user.is_active:

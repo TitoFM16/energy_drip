@@ -1,3 +1,5 @@
+> For the production MVP, use the database + private/public file-volume backup and restore procedure in [the VPS runbook](deploy-vps.md). The older database-only local workflow below is for development.
+
 # Backup and recovery (operator runbook)
 
 This documents what needs backing up, a starting-point strategy, and a

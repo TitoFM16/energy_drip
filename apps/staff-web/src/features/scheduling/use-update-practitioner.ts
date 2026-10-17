@@ -4,6 +4,7 @@ import type { Practitioner } from './types';
 
 interface UpdatePractitionerInput {
   practitionerId: string;
+  full_name?: string;
   specialty?: string;
   is_active?: boolean;
 }
