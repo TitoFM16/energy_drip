@@ -1,30 +1,27 @@
-from redis.asyncio import Redis
+"""Small fixed-window limiter for the MVP's single API process.
 
-from medical_api.core.config import get_settings
+Counters reset on restart. Run exactly one API worker; horizontal scaling
+requires a shared limiter before adding replicas.
+"""
 
-settings = get_settings()
-_redis: Redis | None = None
+from time import monotonic
 
-
-def get_redis() -> Redis:
-    global _redis
-    if _redis is None:
-        _redis = Redis.from_url(settings.redis_url, decode_responses=True)
-    return _redis
+_windows: dict[str, tuple[float, int]] = {}
+_MAX_KEYS = 10_000
 
 
 async def check_rate_limit(key: str, *, limit: int, window_seconds: int) -> bool:
-    """Fixed-window counter. Returns True if this call is within `limit`
-    requests for the current `window_seconds`-long window, False once the
-    caller has exceeded it.
-
-    Fixed-window (not sliding/token-bucket) is a deliberate simplification:
-    it lets a caller burst up to ~2x limit across a window boundary, which
-    is an acceptable trade for the one place this is used today (the
-    public booking form) given the low absolute limits involved.
-    """
-    redis = get_redis()
-    current = await redis.incr(key)
-    if current == 1:
-        await redis.expire(key, window_seconds)
-    return current <= limit
+    # No awaits between read/write: this operation is atomic on the API event loop.
+    now = monotonic()
+    expires_at, count = _windows.get(key, (now + window_seconds, 0))
+    if expires_at <= now:
+        expires_at, count = now + window_seconds, 0
+    if key not in _windows and len(_windows) >= _MAX_KEYS:
+        for expired_key in [k for k, (expires, _) in _windows.items() if expires <= now]:
+            del _windows[expired_key]
+        if len(_windows) >= _MAX_KEYS:
+            # Refuse new keys rather than evicting active limits under load.
+            return False
+    count += 1
+    _windows[key] = (expires_at, count)
+    return count <= limit

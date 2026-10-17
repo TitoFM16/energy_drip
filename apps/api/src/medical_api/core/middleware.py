@@ -74,9 +74,8 @@ class BodySizeLimitMiddleware:
     Only catches requests that declare an honest `Content-Length`; a client
     using chunked transfer-encoding without one could still stream an
     oversized body past this check. Real protection against that requires a
-    limit at the reverse proxy/load balancer in front of the app, which is
-    infrastructure this repo doesn't own yet — see "Production deployment
-    infrastructure" in missing_features.md. This is still real defense in
+    limit at the reverse proxy. The production Caddyfile enforces a 10 MB
+    streaming limit, including requests without Content-Length. This check is defense in
     depth for the common case (an honest or naively malicious oversized
     request) and costs nothing for every normal request.
     """

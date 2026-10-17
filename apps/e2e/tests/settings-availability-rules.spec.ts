@@ -9,7 +9,7 @@ test('admin manages a practitioner availability rule from Settings', async ({ pa
   await page.getByLabel('Correo electrónico').fill(clinic.adminEmail);
   await page.getByLabel('Contraseña').fill(clinic.adminPassword);
   await page.getByRole('button', { name: 'Entrar' }).click();
-  await expect(page).toHaveURL(`${STAFF_WEB_URL}/`);
+  await expect(page).toHaveURL(`${STAFF_WEB_URL}/agenda`);
 
   await page.goto(`${STAFF_WEB_URL}/settings`);
   // A plain getByLabel('Profesional') is ambiguous on this page: the
@@ -20,9 +20,12 @@ test('admin manages a practitioner availability rule from Settings', async ({ pa
     .getByRole('combobox', { name: 'Profesional' })
     .selectOption({ label: 'E2E Practitioner' });
 
-  // bootstrapClinic already seeds one all-day rule per weekday as test
-  // fixture data — add a distinct, narrower rule through the real form and
-  // confirm it shows up alongside them without disturbing them.
+  // Replace Wednesday's seeded rule before adding a narrower interval.
+  // Overlapping weekly intervals are intentionally rejected by the API.
+  const seededRule = page.locator('li', { hasText: 'Miércoles · 00:00–23:45' });
+  await expect(seededRule).toBeVisible();
+  await seededRule.getByRole('button', { name: 'Eliminar', exact: true }).click();
+  await expect(seededRule).toHaveCount(0);
   await page.getByLabel('Día').selectOption({ label: 'Miércoles' });
   await page.getByLabel('Desde').fill('09:00');
   await page.getByLabel('Hasta').fill('10:00');

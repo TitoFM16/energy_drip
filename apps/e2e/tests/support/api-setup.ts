@@ -109,10 +109,8 @@ export async function bootstrapClinic(): Promise<ClinicFixture> {
     body: JSON.stringify(practitionerBody),
   });
 
-  // Every weekday, nearly the full 24 hours — rule times are interpreted
-  // as UTC directly (see AvailabilityService's docstring), and slots in
-  // the past relative to "now" don't show up, so the test suite shouldn't
-  // have to care what day *or time* it happens to run at.
+  // Every weekday in Colombia time. Tomorrow always has a full set of
+  // untouched service-duration slots, independently of the test run time.
   for (let weekday = 0; weekday <= 6; weekday += 1) {
     const ruleBody: Schemas['AvailabilityRuleCreate'] = {
       practitioner_id: practitioner.id,
@@ -131,6 +129,10 @@ export async function bootstrapClinic(): Promise<ClinicFixture> {
     name: 'Limpieza facial E2E',
     description: 'Tratamiento de prueba end-to-end',
     default_session_count: 1,
+    price: '100000',
+    currency: 'COP',
+    duration_minutes: 60,
+    is_active: true,
   };
   const treatmentDefinition = await api<Schemas['TreatmentDefinitionRead']>(
     '/api/v1/treatments/definitions',

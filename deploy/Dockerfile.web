@@ -1,0 +1,23 @@
+FROM node:22-slim AS build
+RUN corepack enable pnpm && corepack prepare pnpm@9.12.0 --activate
+WORKDIR /workspace
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY packages ./packages
+COPY apps/staff-web ./apps/staff-web
+COPY apps/patient-web ./apps/patient-web
+COPY apps/landing ./apps/landing
+RUN pnpm install --frozen-lockfile
+ARG VITE_SITE_URL=http://localhost:5175
+ENV VITE_SITE_URL=${VITE_SITE_URL}
+ENV VITE_API_BASE_URL=""
+RUN pnpm --filter staff-web build && \
+    pnpm --filter patient-web build && \
+    pnpm --filter landing build
+
+FROM caddy:2-alpine
+COPY deploy/Caddyfile /etc/caddy/Caddyfile
+RUN SITE_DOMAIN=localhost STAFF_DOMAIN=admin.localhost CONSENT_DOMAIN=consent.localhost \
+    TLS_EMAIL=owner@example.com caddy adapt --config /etc/caddy/Caddyfile > /dev/null
+COPY --from=build /workspace/apps/landing/dist /srv/landing
+COPY --from=build /workspace/apps/staff-web/dist /srv/staff
+COPY --from=build /workspace/apps/patient-web/dist /srv/patient

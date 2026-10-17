@@ -30,13 +30,14 @@ import uuid
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from medical_api.core.config import get_settings
 from medical_api.core.database import engine, get_db
 from medical_api.main import app
+from medical_api.modules.identity.models import PasswordResetToken
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
@@ -84,6 +85,7 @@ async def client():
     transport = ASGITransport(app=app)
     try:
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            ac.db_session = session
             yield ac
     finally:
         del app.dependency_overrides[get_db]
@@ -265,3 +267,53 @@ async def test_password_reset_flow(client):
         json={"token": "not-a-real-token", "new_password": "brandnewpassword1"},
     )
     assert confirm_bad_token.status_code == 400
+
+
+async def test_production_password_reset_neither_reveals_nor_creates_token(client, monkeypatch):
+    registered = await _register_org(client)
+    me = await client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {registered['access_token']}"},
+    )
+    account = me.json()
+    reset_count = (
+        select(func.count())
+        .select_from(PasswordResetToken)
+        .where(PasswordResetToken.user_id == uuid.UUID(account["id"]))
+    )
+    assert await client.db_session.scalar(reset_count) == 0
+    monkeypatch.setattr(get_settings(), "environment", "production")
+    known = await client.post(
+        "/api/v1/auth/password-reset/request", json={"email": account["email"]}
+    )
+    unknown = await client.post(
+        "/api/v1/auth/password-reset/request", json={"email": f"{uuid.uuid4()}@example.com"}
+    )
+    assert known.status_code == unknown.status_code == 200
+    assert known.json() == unknown.json()
+    assert known.json()["token"] is None
+    assert "administrador" in known.json()["detail"]
+    assert await client.db_session.scalar(reset_count) == 0
+
+
+async def test_development_password_reset_token_still_changes_password(client):
+    registered = await _register_org(client)
+    me = await client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {registered['access_token']}"},
+    )
+    email = me.json()["email"]
+    requested = await client.post("/api/v1/auth/password-reset/request", json={"email": email})
+    assert requested.status_code == 200
+    token = requested.json()["token"]
+    assert token
+    confirmed = await client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json={"token": token, "new_password": "new-development-password"},
+    )
+    assert confirmed.status_code == 204
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": "new-development-password"},
+    )
+    assert login.status_code == 200

@@ -170,9 +170,7 @@ class ConsentSubmissionRead(BaseModel):
     reviewed_at: datetime | None
     has_signature: bool
     answers: list[ConsentAnswerRead]
-    # Empty until the worker finishes generating the PDF (async, off the
-    # consent.submitted event) — the review workspace polls/refetches
-    # rather than the API making the client wait on it synchronously.
+    # Generated synchronously with the signed submission; no worker is required.
     documents: list[DocumentRead] = []
 
 

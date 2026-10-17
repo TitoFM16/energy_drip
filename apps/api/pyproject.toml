@@ -13,18 +13,17 @@ dependencies = [
     "python-jose[cryptography]>=3.3.0",
     "bcrypt>=4.0.0",
     "python-multipart>=0.0.9",
-    "redis>=5.0.8",
     "boto3>=1.35.0",
     "structlog>=24.4.0",
     "httpx>=0.27.0",
     "defusedxml>=0.7.1",
+    "weasyprint>=62.0",
+    "pillow>=10.0",
 ]
 
 [project.optional-dependencies]
-# Only needed by apps/worker's PDF-generation activity, which depends on
-# this package as a library; kept out of the API's default install so the
-# request-serving process doesn't carry WeasyPrint's native dependencies.
-pdf = ["weasyprint>=62.0"]
+# Compatibility alias for the dormant legacy worker; PDFs are part of the API.
+pdf = []
 
 [dependency-groups]
 dev = [

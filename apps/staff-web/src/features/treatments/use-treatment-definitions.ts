@@ -15,7 +15,11 @@ export function useTreatmentDefinitions(includeInactive = false) {
 interface CreateTreatmentDefinitionInput {
   name: string;
   description?: string;
-  default_session_count: number;
+  default_session_count?: number;
+  price: string;
+  currency: string;
+  duration_minutes: number;
+  image_url?: string | null;
 }
 
 export function useCreateTreatmentDefinition() {
@@ -37,6 +41,10 @@ interface UpdateTreatmentDefinitionInput {
   name?: string;
   description?: string;
   default_session_count?: number;
+  price?: string;
+  currency?: string;
+  duration_minutes?: number;
+  image_url?: string | null;
   is_active?: boolean;
 }
 

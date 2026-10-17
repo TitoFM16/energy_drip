@@ -8,10 +8,6 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
-    # Postgres/Redis credentials and ports match docker-compose.yml and the
-    # app config's own defaults (core/config.py) exactly, so no DATABASE_URL/
-    # REDIS_URL env vars are needed below — same convenience the local dev
-    # setup already relies on.
     services:
       postgres:
         image: postgres:16-alpine
@@ -26,41 +22,14 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
           version: "0.8.17"
       - run: uv sync --all-packages
-      # GitHub Actions' `services:` block has no way to override a
-      # container's command (MinIO's image needs `server /data`, which
-      # postgres/redis above don't), so it's started as a plain step
-      # instead. Credentials/port match docker-compose.yml and
-      # core/config.py's own Settings defaults exactly — same convenience
-      # as the Postgres/Redis services needing no env vars below. Added
-      # once the document tests below became the first backend tests to
-      # actually call upload_bytes/download_bytes against real object
-      # storage instead of never touching it.
-      - name: Start MinIO
-        run: |
-          docker run -d --name minio -p 9000:9000 \
-            -e MINIO_ROOT_USER=medical -e MINIO_ROOT_PASSWORD=medical123 \
-            minio/minio server /data
-      - name: Wait for MinIO and create the test bucket
-        working-directory: apps/api
-        run: |
-          timeout 30 sh -c 'until curl -sf http://localhost:9000/minio/health/live; do sleep 1; done'
-          uv run --project ../.. --package medical-api python -c \
-            "from medical_api.integrations.object_storage.client import ensure_bucket_exists; ensure_bucket_exists()"
+      - name: Install PDF rendering libraries
+        run: sudo apt-get update && sudo apt-get install -y libpango-1.0-0 libpangoft2-1.0-0 fonts-dejavu-core
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - name: Apply migrations
@@ -87,10 +56,6 @@ jobs:
         run: |
           uv run --project ../.. --package medical-api python scripts/dump_openapi_schema.py
           git diff --exit-code -- ../../packages/api-client/generated/openapi.json
-      # Runs against the real Postgres/Redis services above rather than
-      # skipping — DB/Redis-backed integration tests (auth flows,
-      # authorization/audit, booking rate limiting) previously only ran
-      # locally, never in CI, because this job had no database at all.
       - run: uv run pytest
 
   frontend:
@@ -100,7 +65,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Regenerate TypeScript API types and check for drift
@@ -115,6 +80,8 @@ jobs:
       # apiFetch, patient-web's form-validation/payload helpers, landing's
       # booking-payload builder) never actually ran in CI before this.
       - run: pnpm turbo lint typecheck test build
+      - name: Build production static sites and validate Caddy configuration
+        run: docker build -f deploy/Dockerfile.web --build-arg VITE_SITE_URL=https://clinic.example.com -t energy-drip-web:ci .
 
   e2e:
     runs-on: ubuntu-latest
@@ -123,7 +90,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Install Playwright's browser
@@ -134,26 +101,11 @@ jobs:
       - name: Start the full stack
         run: docker compose up -d --build
       - name: Wait for every service to actually be ready
-        # /health/ready checks Postgres and Redis connectivity (see
-        # apps/api/src/medical_api/main.py) — a plain "is the port open"
-        # check would pass before migrations/startup actually finished.
-        # Neither worker process has an HTTP endpoint to poll, so each is
-        # checked via its own startup log line instead — found this gap
-        # after document-verification.spec.ts (the one test that waits on
-        # real async PDF generation) started failing here twice in a row on
-        # freshly built worker containers. `worker` (the outbox consumer)
-        # starts fast and was a red herring; the actual culprit is
-        # `worker-queue`, the separate dramatiq process pool that executes
-        # generate_consent_pdf — importing WeasyPrint/Pango across several
-        # forked worker processes is the slow part, and the suite was
-        # starting before any of them had finished booting.
         run: |
           timeout 180 bash -c 'until curl -sf http://localhost:8000/health/ready; do sleep 3; done'
           timeout 60 bash -c 'until curl -sf http://localhost:5173 >/dev/null; do sleep 2; done'
           timeout 60 bash -c 'until curl -sf http://localhost:5174 >/dev/null; do sleep 2; done'
           timeout 60 bash -c 'until curl -sf http://localhost:5175 >/dev/null; do sleep 2; done'
-          timeout 60 bash -c 'until docker compose logs worker 2>/dev/null | grep -q "outbox_consumer.started"; do sleep 2; done'
-          timeout 90 bash -c 'until docker compose logs worker-queue 2>/dev/null | grep -q "Worker process is ready for action"; do sleep 2; done'
       - name: Run end-to-end tests
         run: pnpm --filter @medical-platform/e2e test:e2e
       - name: Docker compose logs

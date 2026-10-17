@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from medical_api.modules.identity.models import (
@@ -76,13 +77,14 @@ class UserRepository:
         return list((await self.session.execute(stmt)).scalars().all())
 
     async def get_or_create_role(self, name: RoleName) -> Role:
+        # Roles are shared across clinics. Concurrent invite acceptance can
+        # create the same first role; PostgreSQL waits for the winning insert
+        # before deciding whether this insert should be ignored.
+        await self.session.execute(
+            insert(Role).values(name=name).on_conflict_do_nothing(index_elements=[Role.name])
+        )
         stmt = select(Role).where(Role.name == name)
-        role = (await self.session.execute(stmt)).scalar_one_or_none()
-        if role is None:
-            role = Role(name=name)
-            self.session.add(role)
-            await self.session.flush()
-        return role
+        return (await self.session.execute(stmt)).scalar_one()
 
     async def assign_role(self, user_id: uuid.UUID, role_id: uuid.UUID) -> None:
         self.session.add(UserRole(user_id=user_id, role_id=role_id))

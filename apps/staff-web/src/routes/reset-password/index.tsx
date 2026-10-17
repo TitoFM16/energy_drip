@@ -21,7 +21,9 @@ export function ResetPasswordPage() {
       await resetPassword.mutateAsync({ token: token!, new_password: newPassword });
       navigate('/login', { replace: true, state: { passwordResetSuccess: true } });
     } catch {
-      setError('Este enlace no es válido o ya expiró. Solicita uno nuevo.');
+      setError(
+        'Este enlace no es válido o ya expiró. Contacta al administrador para recuperar el acceso.',
+      );
     }
   }
 
@@ -42,7 +44,7 @@ export function ResetPasswordPage() {
             <ErrorText>
               {error}{' '}
               <Link to="/forgot-password" className="underline">
-                Pedir otro enlace
+                Ver opciones de recuperación
               </Link>
             </ErrorText>
           )}

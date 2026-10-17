@@ -1,27 +1,15 @@
-"""Coverage for "Document access, verification, and invalidation" and the
-version-tracking half of "Document version history and regeneration" in
-missing_features.md. Same real-database-plus-savepoint pattern as
-test_operational_dashboard.py — see that module's docstring, and
-test_auth_flows.py's `client` fixture, for the full rationale.
+"""Private document permissions, expiring downloads and inline PDF regeneration."""
 
-PDF generation itself happens asynchronously in the worker (see
-apps/worker/src/medical_worker/activities/generate_pdf.py) and isn't
-exercised by this pytest suite (no worker process runs alongside the
-ASGI test client) — the fixture below inserts a ConsentDocument row and a
-real object directly, uploaded through the same `upload_bytes` the worker
-uses, so download/verify hit real MinIO rather than a mock. The
-regenerate endpoint's actual PDF regeneration was verified live against
-the real docker compose stack with the worker running (see
-missing_features.md's writeup) — this suite only covers the API-layer
-authorization/enqueue/audit behavior it's actually responsible for.
-"""
-
+import importlib.util
+import io
 import uuid
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from PIL import Image
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -34,12 +22,12 @@ from medical_api.modules.consents.models import (
     ConsentDocument,
     ConsentRequest,
     ConsentRequestStatus,
+    ConsentSignature,
     ConsentSubmission,
     ConsentTemplate,
     ConsentTemplateVersion,
     EligibilityResult,
 )
-from medical_api.modules.notifications.models import OutboxEvent
 from medical_api.modules.patients.models import Patient
 from medical_api.shared.utilities.hashing import sha256_hash
 
@@ -168,6 +156,14 @@ async def _seed_document(
     session.add(submission)
     await session.flush()
 
+    signature_key = f"organizations/{organization_id}/documents-test/{uuid.uuid4()}.svg"
+    upload_bytes(
+        signature_key,
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100">'
+        b'<path d="M10 10 L100 50" stroke="black"/></svg>',
+        "image/svg+xml",
+    )
+    session.add(ConsentSignature(submission_id=submission.id, signature_svg_path=signature_key))
     storage_key = f"organizations/{organization_id}/documents-test/{uuid.uuid4()}.pdf"
     upload_bytes(storage_key, pdf_bytes, "application/pdf")
     document = ConsentDocument(
@@ -224,8 +220,7 @@ async def test_download_returns_a_working_presigned_url(client):
     body = download.json()
     assert body["expires_in"] > 0
 
-    async with AsyncClient() as raw_client:
-        fetched = await raw_client.get(body["url"])
+    fetched = await client.get(body["url"])
     assert fetched.status_code == 200
     assert fetched.content == pdf_bytes
 
@@ -289,31 +284,41 @@ async def test_invalidate_requires_a_designated_role_and_is_one_way(client):
     assert already_invalidated.status_code == 409
 
 
-async def test_regenerate_enqueues_a_worker_event(client):
+async def test_regenerate_creates_new_pdf_immediately(client):
     org = await _register_org(client)
     admin_headers = {"Authorization": f"Bearer {org['access_token']}"}
     seeded = await _seed_document(client.db_session, uuid.UUID(org["organization_id"]))
-
-    regenerate = await client.post(
+    response = await client.post(
         f"/api/v1/documents/{seeded['document_id']}/regenerate",
-        json={"reason": "Original PDF failed to render correctly"},
+        json={"reason": "Improve original PDF rendering"},
         headers=admin_headers,
     )
-    assert regenerate.status_code == 202, regenerate.text
-
-    # Scoped to this test's own organization — READ COMMITTED means this
-    # query would otherwise also see real outbox_events rows genuinely
-    # committed by other connections against the same shared dev database
-    # (e.g. the docker compose worker/other manual testing), not just
-    # this test's own savepoint-scoped writes.
-    stmt = select(OutboxEvent).where(
-        OutboxEvent.event_type == "consent.document.regenerate_requested",
-        OutboxEvent.organization_id == uuid.UUID(org["organization_id"]),
+    assert response.status_code == 200, response.text
+    original = await client.db_session.get(ConsentDocument, seeded["document_id"])
+    assert original.is_current is False
+    documents = (
+        (
+            await client.db_session.execute(
+                select(ConsentDocument)
+                .where(ConsentDocument.submission_id == original.submission_id)
+                .order_by(ConsentDocument.document_version)
+            )
+        )
+        .scalars()
+        .all()
     )
-    events = (await client.db_session.execute(stmt)).scalars().all()
-    assert len(events) == 1
-    assert events[0].payload["reason"] == "Original PDF failed to render correctly"
-    assert events[0].payload["submission_id"] is not None
+    assert len(documents) == 2
+    assert documents[1].is_current is True
+    assert documents[1].regenerated_reason == "Improve original PDF rendering"
+    download = await client.get(
+        f"/api/v1/documents/{documents[1].id}/download", headers=admin_headers
+    )
+    content = await client.get(download.json()["url"])
+    assert content.content.startswith(b"%PDF-")
+    verified = await client.post(
+        f"/api/v1/documents/{documents[1].id}/verify", headers=admin_headers
+    )
+    assert verified.json()["matches"] is True
 
 
 async def test_document_mutations_are_audited(client):
@@ -340,3 +345,102 @@ async def test_document_mutations_are_audited(client):
         "document.verified",
         "document.invalidated",
     }
+
+
+async def test_service_image_upload_is_owned_role_gated_and_rejects_active_content(client):
+    owner = await _register_org(client)
+    headers = {"Authorization": f"Bearer {owner['access_token']}"}
+    service = await client.post(
+        "/api/v1/treatments/definitions",
+        json={"name": "Consulta", "price": "50000"},
+        headers=headers,
+    )
+    assert service.status_code == 201, service.text
+    path = f"/api/v1/treatments/definitions/{service.json()['id']}/image"
+    image = io.BytesIO()
+    Image.new("RGB", (32, 32), "blue").save(image, format="PNG")
+    files = {"file": ("photo.png", image.getvalue(), "image/png")}
+    assert (await client.post(path, files=files)).status_code == 401
+    other = await _register_org(client)
+    assert (
+        await client.post(
+            path, files=files, headers={"Authorization": f"Bearer {other['access_token']}"}
+        )
+    ).status_code == 404
+    worker = await _invite_and_accept(client, headers, "practitioner")
+    assert (
+        await client.post(
+            path, files=files, headers={"Authorization": f"Bearer {worker['access_token']}"}
+        )
+    ).status_code == 403
+    bad_image = await client.post(
+        path,
+        headers=headers,
+        files={"file": ("photo.svg", b"<svg><script>alert(1)</script></svg>", "image/svg+xml")},
+    )
+    assert bad_image.status_code == 422
+    uploaded = await client.post(path, headers=headers, files=files)
+    assert uploaded.status_code == 200, uploaded.text
+    assert uploaded.json()["image_url"].startswith("/media/services/")
+    public_image = await client.get(uploaded.json()["image_url"])
+    assert public_image.status_code == 200
+    assert public_image.headers["content-type"] == "image/webp"
+
+
+async def test_operator_recovery_is_scoped_revokes_refresh_and_keeps_new_login(client):
+    script = Path(__file__).parents[1] / "scripts" / "reset_staff_password.py"
+    spec = importlib.util.spec_from_file_location("reset_staff_password", script)
+    recovery = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(recovery)
+    registered = await _register_org(client)
+    headers = {"Authorization": f"Bearer {registered['access_token']}"}
+    profile = await client.get("/api/v1/auth/me", headers=headers)
+    email = profile.json()["email"]
+    pending_reset = await client.post("/api/v1/auth/password-reset/request", json={"email": email})
+    with pytest.raises(ValueError):
+        await recovery.reset_user_password(
+            client.db_session,
+            organization_id=uuid.uuid4(),
+            email=email,
+            password="new-owner-password-123",
+        )
+    await recovery.reset_user_password(
+        client.db_session,
+        organization_id=uuid.UUID(registered["organization_id"]),
+        email=email,
+        password="new-owner-password-123",
+    )
+    await client.db_session.commit()
+    old_login = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email,
+            "password": "supersecret123",
+        },
+    )
+    assert old_login.status_code == 401
+    new_login = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email,
+            "password": "new-owner-password-123",
+        },
+    )
+    assert new_login.status_code == 200
+    refresh = await client.post(
+        "/api/v1/auth/refresh",
+        json={
+            "refresh_token": registered["refresh_token"],
+        },
+    )
+    assert refresh.status_code == 401
+    reset_attempt = await client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json={
+            "token": pending_reset.json()["token"],
+            "new_password": "another-password-123",
+        },
+    )
+    assert reset_attempt.status_code == 400
+    events = await client.get("/api/v1/audit", headers=headers)
+    assert any(event["action"] == "user.password_reset_by_operator" for event in events.json())

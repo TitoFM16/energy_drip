@@ -28,7 +28,7 @@ async function doRefresh(): Promise<boolean> {
 function buildHeaders(init?: RequestInit): HeadersInit {
   const session = authStorage.get();
   return {
-    'Content-Type': 'application/json',
+    ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
     ...(session ? { Authorization: `Bearer ${session.accessToken}` } : {}),
     ...init?.headers,
   };
@@ -63,4 +63,8 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     return undefined as T;
   }
   return response.json() as Promise<T>;
+}
+
+export function mediaUrl(path: string): string {
+  return path.startsWith('/') ? `${API_BASE_URL}${path}` : path;
 }

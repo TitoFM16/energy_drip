@@ -9,7 +9,7 @@ test('staff adds and removes a patient contact and an emergency contact', async 
   await page.getByLabel('Correo electrónico').fill(clinic.adminEmail);
   await page.getByLabel('Contraseña').fill(clinic.adminPassword);
   await page.getByRole('button', { name: 'Entrar' }).click();
-  await expect(page).toHaveURL(`${STAFF_WEB_URL}/`);
+  await expect(page).toHaveURL(`${STAFF_WEB_URL}/agenda`);
 
   await page.goto(`${STAFF_WEB_URL}/patients`);
   await page.getByRole('button', { name: 'Nuevo paciente' }).click();

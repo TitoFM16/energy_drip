@@ -63,6 +63,7 @@ async def bootstrap(
         await session.commit()
 
     print(f"Clinic '{clinic_name}' created. Admin {admin_email} can now log in.")
+    print(f"PUBLIC_ORGANIZATION_ID={organization.id}")
 
 
 def main() -> None:

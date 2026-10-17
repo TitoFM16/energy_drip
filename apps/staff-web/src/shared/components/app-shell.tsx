@@ -3,13 +3,11 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../features/auth/use-auth';
 
 const NAV_ITEMS = [
-  { to: '/', label: 'Dashboard' },
   { to: '/agenda', label: 'Agenda' },
   { to: '/patients', label: 'Pacientes' },
-  { to: '/treatments', label: 'Tratamientos' },
+  { to: '/treatments', label: 'Servicios' },
   { to: '/consents', label: 'Consentimientos' },
-  { to: '/notifications', label: 'Notificaciones' },
-  { to: '/settings', label: 'Configuración' },
+  { to: '/settings', label: 'Equipo y horarios' },
 ];
 
 export function AppShell() {
@@ -22,10 +20,10 @@ export function AppShell() {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50 text-slate-900">
-      <aside className="flex w-56 shrink-0 flex-col border-r border-slate-200 bg-white p-4">
-        <div className="mb-6 text-lg font-semibold">Medical Platform</div>
-        <nav className="flex flex-1 flex-col gap-1">
+    <div className="flex min-h-screen flex-col bg-slate-50 md:flex-row text-slate-900">
+      <aside className="flex shrink-0 flex-col border-b border-slate-200 bg-white p-4 md:w-56 md:border-r md:border-b-0">
+        <div className="mb-6 text-lg font-semibold">Energy Drip</div>
+        <nav className="flex flex-1 flex-wrap gap-1 md:flex-col">
           {NAV_ITEMS.map((item) => (
             <NavLink
               key={item.to}
@@ -52,7 +50,7 @@ export function AppShell() {
           </button>
         </div>
       </aside>
-      <main className="flex-1 p-8">
+      <main className="min-w-0 flex-1 p-4 sm:p-8">
         <Outlet />
       </main>
     </div>

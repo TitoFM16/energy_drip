@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, time
 from enum import StrEnum
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from medical_api.core.database import (
@@ -60,6 +60,10 @@ class AvailabilityRule(Base, UUIDPrimaryKeyMixin, OrganizationScopedMixin):
 
 class Appointment(Base, UUIDPrimaryKeyMixin, TimestampMixin, OrganizationScopedMixin):
     __tablename__ = "appointments"
+    __table_args__ = (
+        CheckConstraint("ends_at > starts_at", name="ck_appointment_time_order"),
+        Index("ix_appointments_practitioner_time", "practitioner_id", "starts_at", "ends_at"),
+    )
 
     patient_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("patients.id", ondelete="RESTRICT"), index=True

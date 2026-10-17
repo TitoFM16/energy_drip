@@ -1,5 +1,6 @@
 import { Badge, Button, ErrorText, TextAreaField } from '@medical-platform/ui';
 import { useState } from 'react';
+import { mediaUrl } from '../../shared/utilities/api';
 import { useAuth } from '../../features/auth/use-auth';
 import {
   useConsentRequestDetail,
@@ -280,8 +281,11 @@ function DocumentRow({ document }: { document: ConsentDocument }) {
   const [reason, setReason] = useState('');
 
   async function handleDownload() {
-    const result = await download.mutateAsync(document.id);
-    window.open(result.url, '_blank', 'noopener,noreferrer');
+    try {
+      await download.mutateAsync(document.id);
+    } catch {
+      /* The inline error remains visible for retry. */
+    }
   }
 
   async function handleConfirmInvalidate() {
@@ -323,7 +327,7 @@ function DocumentRow({ document }: { document: ConsentDocument }) {
           onClick={handleDownload}
           className="text-slate-500 underline disabled:opacity-40"
         >
-          Descargar
+          {download.isPending ? 'Preparando…' : 'Preparar descarga'}
         </button>
         <button
           type="button"
@@ -353,6 +357,23 @@ function DocumentRow({ document }: { document: ConsentDocument }) {
         )}
       </div>
 
+      {download.data && (
+        <a
+          href={mediaUrl(download.data.url)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 inline-block text-sm font-medium text-green-800 underline"
+        >
+          Abrir PDF firmado
+        </a>
+      )}
+      {download.isError && (
+        <ErrorText className="mt-2">No se pudo preparar la descarga. Inténtalo de nuevo.</ErrorText>
+      )}
+      {verify.isError && <ErrorText className="mt-2">No se pudo verificar el documento.</ErrorText>}
+      {(invalidate.isError || regenerate.isError) && (
+        <ErrorText className="mt-2">No se pudo actualizar el documento.</ErrorText>
+      )}
       {verify.data && (
         <p className={`mt-1 text-xs ${verify.data.matches ? 'text-emerald-700' : 'text-red-600'}`}>
           {verify.data.matches
@@ -396,7 +417,7 @@ function DocumentRow({ document }: { document: ConsentDocument }) {
       )}
       {regenerate.isSuccess && (
         <p className="mt-1 text-xs text-slate-500">
-          Regeneración solicitada — actualiza en unos segundos para ver la nueva versión.
+          Documento regenerado. La nueva versión aparece en esta lista.
         </p>
       )}
     </li>

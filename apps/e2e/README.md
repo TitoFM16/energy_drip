@@ -1,75 +1,21 @@
-# End-to-end tests
+# MVP browser checks
 
-Playwright tests that exercise real cross-app user journeys against the
-full Docker Compose stack — the same nine services (Postgres, Redis, MinIO,
-the API, both worker processes, and all three frontend apps) local
-development already runs, not a mocked or partial environment.
+The default Playwright suite runs the real API, PostgreSQL and three frontend apps. It needs no Redis, workers, messaging providers or hosted storage. Signed consent PDFs use private local storage during tests.
 
-## Why this exists
+Use a **fresh dedicated E2E database**. The `public-mvp` project runs first and creates the only clinic, verifying owner service creation, image upload, pricing edits, direct worker creation, weekly availability, public slot booking, appointment rescheduling/cancellation and service archiving. It saves desktop and mobile screenshots in `test-results/` for visual review.
 
-Every other test in this repo (`apps/api/tests`, `apps/worker/tests`, each
-frontend app's `vitest` suite) tests one layer in isolation. Nothing
-automated verified that, say, a staff member creating a consent request in
-staff-web actually produces a link a patient can complete in patient-web,
-and that the result shows back up correctly in staff-web — that kind of
-cross-service flow had only ever been checked by hand, in a browser, once
-per feature, during development. These tests automate exactly that.
-
-## Running locally
+The dependent `chromium` project then creates isolated clinics for staff booking, patient records, schedule management and consent signing/review/document verification. Legacy clinical history, treatment-plan, contacts and fine-grained role UI specs are retained in source but excluded from the MVP gate because those screens are no longer part of the MVP navigation.
 
 ```sh
-# From the repo root — brings up the full stack.
-docker compose up -d
-
-# One-time, or after a Playwright version bump.
 pnpm --filter @medical-platform/e2e install-browsers
-
-# Run everything.
-pnpm --filter @medical-platform/e2e test:e2e
-
-# Interactive UI mode — much easier for writing/debugging a new test.
-pnpm --filter @medical-platform/e2e test:e2e:ui
-
-# One file.
-pnpm --filter @medical-platform/e2e exec playwright test tests/consent-flow.spec.ts
+pnpm test:e2e
 ```
 
-Each test is fully self-contained: `tests/support/api-setup.ts` registers a
-fresh organization, practitioner, treatment, and published consent template
-directly against the API before the test touches a browser at all — no
-dependency on `make seed` or any other pre-existing data, and no shared
-state between tests (each gets its own organization). This is deliberate:
-the shared local dev Postgres already accumulates leftover data across
-sessions (see "Reference and demonstration data" in
-`docs/missing_features.md`), and these tests need to stay green regardless
-of what's already in that database.
+Default app origins are API `:8000`, staff `:5173`, patient consent `:5174` and landing `:5175`. For an isolated stack, set `E2E_API_URL`, `E2E_STAFF_WEB_URL`, `E2E_PATIENT_WEB_URL` and `E2E_LANDING_URL`. Frontends must be built or started against the same API and the API's `PATIENT_WEB_BASE_URL` must match the consent app.
 
-## What's covered
+After a failed run, recreate only the dedicated test database before rerunning the public project. Do not reset a development or production database. To rerun a staff test against its own fresh fixture without the public setup project, use `--project=chromium --no-deps`.
 
-- `staff-appointment-booking.spec.ts` — staff logs in for real (the actual
-  login form, not a token injected into storage), books an available
-  slot for a patient, confirms it shows up on the agenda.
-- `consent-flow.spec.ts` — the full patient-facing consent flow (medical
-  questionnaire, treatment information, hand-drawn signature capture,
-  review, submit) driven from patient-web using a real single-use token,
-  then confirmed from the staff-web review screen. The single highest-value
-  flow in the product: it's the one place all three of API, worker (PDF
-  generation is enqueued but not currently awaited by this test), and two
-  separate frontend apps have to agree with each other.
-- `public-booking.spec.ts` — the public, unauthenticated `/reservar` form
-  on the landing site.
-
-Not covered yet: PDF generation/signed-document retrieval, WhatsApp
-delivery (nothing to assert against without real Meta credentials — see
-`docs/whatsapp-setup.md`), and reminder/missed-appointment scheduling
-(these run on a 5-minute interval in the worker, not something a test
-should wait around for). See "End-to-end tests" in
-`docs/missing_features.md` for the full remaining checklist.
-
-## Debugging a failure
-
-Playwright writes a screenshot, video, and trace for every failed test to
-`test-results/` (gitignored). Open the trace with:
+Screenshots, videos and traces are saved for failures. Open a trace with:
 
 ```sh
 pnpm --filter @medical-platform/e2e exec playwright show-trace test-results/<test-name>/trace.zip

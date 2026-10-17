@@ -243,13 +243,20 @@ async def request_password_reset(
         limit=_PASSWORD_RESET_REQUEST_RATE_LIMIT,
         window_seconds=_PASSWORD_RESET_REQUEST_RATE_WINDOW_SECONDS,
     )
+    # The MVP has no email delivery service. Never issue or disclose a reset
+    # credential to an unauthenticated production caller; recovery is performed
+    # by the clinic operator through the password-reset CLI on the VPS.
+    if settings.is_production:
+        return PasswordResetRequestResponse(
+            detail="Contacta al administrador de la clínica para recuperar tu acceso.",
+            token=None,
+        )
     service = _build_service(session)
     raw_token = await service.request_password_reset(payload.email)
     await session.commit()
-    # Same response shape regardless of whether the account exists — only
-    # `token` differs, and that field is dev-mode only (see schema note).
     return PasswordResetRequestResponse(
-        detail="If that account exists, a reset link has been sent.", token=raw_token
+        detail="Development only: use the returned token to reset the account password.",
+        token=raw_token,
     )
 
 

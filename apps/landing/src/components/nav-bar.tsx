@@ -1,19 +1,13 @@
 import { Link } from 'react-router-dom';
 import { BrandMark } from './brand-mark';
 
-const LINKS = [
-  { to: '/servicios', label: 'Servicios' },
-  { to: '/tratamientos', label: 'Tratamientos' },
-  { to: '/profesionales', label: 'Profesionales' },
-  { to: '/preguntas-frecuentes', label: 'FAQ' },
-  { to: '/contacto', label: 'Contacto' },
-];
+const LINKS = [{ to: '/servicios', label: 'Servicios' }];
 
 export function NavBar() {
   return (
     <header className="site-header">
       <div className="site-header__note">
-        <span>Premium mobile IV therapy</span>
+        <span>Atención con cita previa</span>
         <span className="site-header__note-separator" aria-hidden="true" />
         <span>Medellín, Colombia</span>
       </div>

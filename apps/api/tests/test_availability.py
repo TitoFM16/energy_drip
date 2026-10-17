@@ -1,6 +1,7 @@
 import uuid
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from unittest.mock import AsyncMock
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -54,7 +55,7 @@ async def test_computes_slots_from_rule_with_no_conflicts():
 
 async def test_excludes_slots_overlapping_existing_appointment():
     rule = _rule(_NEXT_MONDAY.weekday(), time(9, 0), time(10, 0))
-    busy_start = datetime.combine(_NEXT_MONDAY, time(9, 0), tzinfo=UTC)
+    busy_start = datetime.combine(_NEXT_MONDAY, time(9, 0), tzinfo=ZoneInfo("America/Bogota"))
     busy_appointment = _appointment(busy_start, busy_start + timedelta(minutes=30))
 
     service = _service([rule], [busy_appointment])

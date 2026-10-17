@@ -1,0 +1,80 @@
+name: energy-drip
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: medical
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: medical_platform
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U medical -d medical_platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql+asyncpg://medical:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/medical_platform
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY}
+      ALLOWED_HOSTS: '["${SITE_DOMAIN:?Set SITE_DOMAIN}","${STAFF_DOMAIN:?Set STAFF_DOMAIN}","${CONSENT_DOMAIN:?Set CONSENT_DOMAIN}","localhost","api"]'
+      CORS_ORIGINS: '[]'
+      # Only the reverse proxy can reach the unpublished API port.
+      FORWARDED_ALLOW_IPS: '*'
+      PUBLIC_ORGANIZATION_ID: ${PUBLIC_ORGANIZATION_ID:-}
+      CLINIC_TIMEZONE: ${CLINIC_TIMEZONE:-America/Bogota}
+      PATIENT_WEB_BASE_URL: https://${CONSENT_DOMAIN:?Set CONSENT_DOMAIN}
+      PRIVATE_STORAGE_PATH: /data/private
+      PUBLIC_MEDIA_PATH: /data/media
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+      S3_PUBLIC_ENDPOINT_URL: ${S3_PUBLIC_ENDPOINT_URL:-}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      S3_BUCKET: ${S3_BUCKET:-medical-platform}
+    volumes:
+      - app_data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.web
+      args:
+        VITE_SITE_URL: https://${SITE_DOMAIN:?Set SITE_DOMAIN}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:?Set SITE_DOMAIN}
+      STAFF_DOMAIN: ${STAFF_DOMAIN:?Set STAFF_DOMAIN}
+      CONSENT_DOMAIN: ${CONSENT_DOMAIN:?Set CONSENT_DOMAIN}
+      TLS_EMAIL: ${TLS_EMAIL:?Set TLS_EMAIL}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  app_data:
+  caddy_data:
+  caddy_config:

@@ -1,13 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
-/**
- * Runs against the full Docker Compose stack (`docker compose up`) —
- * intentionally not using Playwright's `webServer` auto-start, since the
- * target here is nine interdependent services (Postgres, Redis, MinIO,
- * API, two worker processes, three frontend apps), not one dev server.
- * See README.md in this directory for how to bring the stack up before
- * running these.
- */
+// The public flow needs an unambiguous, fresh single-clinic database. Run it
+// first, then staff/consent tests may create their isolated organizations.
 export default defineConfig({
   testDir: './tests',
   fullyParallel: true,
@@ -29,7 +23,20 @@ export default defineConfig({
   },
   projects: [
     {
+      name: 'public-mvp',
+      testMatch: 'public-booking.spec.ts',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
       name: 'chromium',
+      dependencies: ['public-mvp'],
+      testMatch: [
+        'staff-appointment-booking.spec.ts',
+        'settings-availability-rules.spec.ts',
+        'patient-creation.spec.ts',
+        'consent-*.spec.ts',
+        'document-verification.spec.ts',
+      ],
       use: { ...devices['Desktop Chrome'] },
     },
   ],

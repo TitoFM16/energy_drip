@@ -39,7 +39,7 @@ class TreatmentDefinitionService:
     async def update(
         self, organization_id: uuid.UUID, definition_id: uuid.UUID, data: TreatmentDefinitionUpdate
     ) -> TreatmentDefinition:
-        definition = await self.repository.get(organization_id, definition_id)
+        definition = await self.repository.get(organization_id, definition_id, for_update=True)
         if definition is None:
             raise NotFoundError("TreatmentDefinition", definition_id)
         for field, value in data.model_dump(exclude_unset=True).items():

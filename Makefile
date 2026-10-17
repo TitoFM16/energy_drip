@@ -1,11 +1,11 @@
-.PHONY: install dev dev-local up down api worker migrate migrate-new seed test lint format backup-db restore-db generate-api-types e2e
+.PHONY: install dev dev-local up down api migrate migrate-new seed test lint format backup-db restore-db generate-api-types e2e
 
 install:
 	pnpm install
 	uv sync --all-packages
 	uv run pre-commit install
 
-# Full stack in Docker: api, worker, worker-queue, all 3 frontend apps, postgres, redis, minio.
+# MVP development: API, three frontend apps, and PostgreSQL.
 dev up:
 	docker compose up --build
 
@@ -15,17 +15,11 @@ down:
 # Local (non-Docker) dev loop: only infra in Docker, apps run on the host via uv/pnpm.
 # Faster iteration than rebuilding containers, at the cost of needing host toolchains installed.
 dev-local:
-	docker compose up -d postgres redis minio
+	docker compose up -d postgres
 	pnpm turbo dev
 
 api:
 	uv run --package medical-api fastapi dev src/medical_api/main.py --root-dir apps/api
-
-worker:
-	uv run --package medical-worker python -m medical_worker.main
-
-worker-queue:
-	uv run --package medical-worker dramatiq medical_worker.tasks
 
 migrate:
 	cd apps/api && uv run --package medical-api alembic upgrade head
@@ -72,3 +66,10 @@ lint:
 format:
 	pnpm exec prettier --write .
 	uv run ruff format .
+
+# Production uses static frontend assets, one API process, and Postgres.
+production:
+	docker compose --env-file .env.production -f docker-compose.production.yml up -d --build
+
+bootstrap:
+	docker compose exec api uv run --no-sync --package medical-api python scripts/bootstrap_clinic.py

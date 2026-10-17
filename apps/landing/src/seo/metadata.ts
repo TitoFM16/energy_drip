@@ -15,9 +15,9 @@ export const SEO_PAGES: readonly SeoPage[] = [
   {
     path: '/',
     canonicalPath: '/',
-    title: 'Energy Drip Medellín | Terapias IV a domicilio',
+    title: 'Energy Drip Medellín | Servicios y citas',
     description:
-      'Energy Drip Medellín: terapias IV móviles con valoración profesional y seguimiento personalizado en tu domicilio, hotel o Airbnb.',
+      'Consulta los servicios y precios de Energy Drip Medellín y reserva tu cita con el profesional y horario que prefieras.',
     structuredData: 'medical-business',
   },
   {
@@ -46,7 +46,7 @@ export const SEO_PAGES: readonly SeoPage[] = [
     canonicalPath: '/seguridad-y-privacidad/',
     title: 'Seguridad y privacidad | Energy Drip Medellín',
     description:
-      'Conoce cómo Energy Drip protege tu información médica con almacenamiento cifrado, acceso restringido y un historial de auditoría.',
+      'Conoce el uso de tus datos para gestionar reservas y los enlaces privados que permiten completar tus consentimientos.',
   },
   {
     path: '/preguntas-frecuentes',
@@ -65,9 +65,9 @@ export const SEO_PAGES: readonly SeoPage[] = [
   {
     path: '/reservar',
     canonicalPath: '/reservar/',
-    title: 'Reserva tu valoración | Energy Drip Medellín',
+    title: 'Reserva tu cita | Energy Drip Medellín',
     description:
-      'Solicita una valoración de Energy Drip. Indica el tratamiento que te interesa y un miembro del equipo confirmará disponibilidad y próximos pasos.',
+      'Reserva tu cita con Energy Drip. Consulta servicios y precios, elige un profesional y confirma un horario disponible.',
   },
   {
     path: '/terminos',

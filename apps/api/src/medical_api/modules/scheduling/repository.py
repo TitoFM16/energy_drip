@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from medical_api.modules.scheduling.models import (
@@ -19,6 +19,20 @@ _INACTIVE_STATUSES = (AppointmentStatus.CANCELLED, AppointmentStatus.NO_SHOW)
 class AppointmentRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
+
+    async def lock_resources(
+        self, practitioner_id: uuid.UUID, room_id: uuid.UUID | None = None
+    ) -> None:
+        """Transaction locks serialize slot checks across every booking/status mutation.
+
+        Always sort keys so shared rooms/workers cannot create a lock-order deadlock.
+        These locks are held until commit or rollback, including public bookings.
+        """
+        keys = [practitioner_id.int & ((1 << 63) - 1)]
+        if room_id is not None:
+            keys.append(room_id.int & ((1 << 63) - 1))
+        for key in sorted(set(keys)):
+            await self.session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
 
     async def get(
         self, organization_id: uuid.UUID, appointment_id: uuid.UUID

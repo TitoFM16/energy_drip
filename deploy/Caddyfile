@@ -1,0 +1,47 @@
+{
+    email {$TLS_EMAIL}
+}
+
+(api) {
+    request_body {
+        max_size 10MB
+    }
+    handle /api/* {
+        reverse_proxy api:8000
+    }
+    handle /media/* {
+        reverse_proxy api:8000
+    }
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+        -Server
+    }
+}
+
+{$SITE_DOMAIN} {
+    import api
+    handle {
+        root * /srv/landing
+        try_files {path} /index.html
+        file_server
+    }
+}
+
+{$STAFF_DOMAIN} {
+    import api
+    handle {
+        root * /srv/staff
+        try_files {path} /index.html
+        file_server
+    }
+}
+
+{$CONSENT_DOMAIN} {
+    import api
+    handle {
+        root * /srv/patient
+        try_files {path} /index.html
+        file_server
+    }
+}
